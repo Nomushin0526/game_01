@@ -3,6 +3,7 @@
 // - ドラッグ: 指を置いて動かした横方向の移動量を consumeDragX() で受け取る（指でなぞる操作）
 // - 左右タッチ: touchAxis() で「画面の左右どちらを押しているか」を -1 / 0 / 1 で受け取る
 // - キーボード: axisX() で ←→ / A D を -1 / 0 / 1 で受け取る
+// - スワイプ: 指をすばやく上下に払うと consumeSwipes() に 'up' / 'down' が入る（指を置いたままの途中でもOK）
 (function () {
   'use strict';
   const NS = (window.GameShared = window.GameShared || {});
@@ -15,6 +16,7 @@
       this.pointers = new Map(); // pointerId -> { x0..1, lastX(px) }
       this.dragId = null;
       this.dragDX = 0;
+      this.swipes = [];
 
       window.addEventListener('keydown', (e) => {
         if (BLOCK.includes(e.code)) e.preventDefault();
@@ -32,7 +34,7 @@
       };
       t.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        this.pointers.set(e.pointerId, { x: rel(e), lastX: e.clientX });
+        this.pointers.set(e.pointerId, { x: rel(e), lastX: e.clientX, hist: [{ t: performance.now(), x: e.clientX, y: e.clientY }], cool: 0 });
         if (this.dragId === null) this.dragId = e.pointerId;
         try {
           t.setPointerCapture(e.pointerId);
@@ -46,6 +48,20 @@
         if (e.pointerId === this.dragId) this.dragDX += e.clientX - p.lastX;
         p.lastX = e.clientX;
         p.x = rel(e);
+        // 直近 0.13 秒の動きで上下のフリックを判定
+        const now = performance.now();
+        p.hist.push({ t: now, x: e.clientX, y: e.clientY });
+        while (p.hist.length > 2 && now - p.hist[0].t > 130) p.hist.shift();
+        if (now > p.cool) {
+          const a = p.hist[0];
+          const dy = e.clientY - a.y;
+          const dx = e.clientX - a.x;
+          if (Math.abs(dy) > 34 && Math.abs(dy) > Math.abs(dx) * 1.2) {
+            this.swipes.push(dy < 0 ? 'up' : 'down');
+            p.cool = now + 260;
+            p.hist = [{ t: now, x: e.clientX, y: e.clientY }];
+          }
+        }
       });
       const end = (e) => {
         this.pointers.delete(e.pointerId);
@@ -62,7 +78,14 @@
       t.addEventListener('contextmenu', (e) => e.preventDefault());
     }
 
+    consumeSwipes() {
+      const s = this.swipes;
+      this.swipes = [];
+      return s;
+    }
+
     reset() {
+      this.swipes = [];
       this.keys.clear();
       this.pointers.clear();
       this.dragId = null;

@@ -11,7 +11,13 @@
   const CAM_BACK = 7; // ゲーム側が「カメラの後ろに消えた」判定に使う距離
   const CHUNK = 40; // 景色を作る単位（m）
   // カメラ: プレイヤーの後ろ上から、少し先を見下ろす
-  const CAM = { back: 4.6, h: 4.3, ahead: 20, lookY: -3.6, hfov: 62 };
+  // カメラ視点: 標準 / 見下ろし / 一人称
+  const CAMS = {
+    normal: { back: 4.6, h: 4.3, ahead: 20, lookY: -3.6, hfov: 62 },
+    high: { back: 6.8, h: 6.8, ahead: 12, lookY: -6.5, hfov: 66 }, // 商店街のアーケードやスーパーの天井より下
+    fp: { hfov: 78 },
+  };
+  let CAM = CAMS.normal;
 
   const R = { W: 1, H: 1, k: 50, camX: 0, lift: 0, shake: 0 };
   let renderer = null;
@@ -23,6 +29,8 @@
   let player = null;
   let backdrop = null;
   let skyKey = '';
+  let G_night = false;
+  let camMode = 'normal';
   const chunks = new Map();
   const live = new Map();
   let stageObjs = [];
@@ -69,10 +77,19 @@
     renderer.setSize(W, H, false);
     camera.aspect = W / H;
     // 縦長画面でも左右が狭くなりすぎないよう、横の画角を基準に縦の画角を決める
+    updateFov();
+  }
+  function updateFov() {
     const tanH = Math.tan((CAM.hfov * Math.PI) / 360);
     baseFov = clamp((Math.atan(tanH / camera.aspect) * 360) / Math.PI, 50, 100);
     camera.fov = baseFov;
     camera.updateProjectionMatrix();
+  }
+
+  function setCameraMode(mode) {
+    camMode = CAMS[mode] ? mode : 'normal';
+    CAM = CAMS[camMode];
+    if (camera) updateFov();
   }
 
   function setCamera(x, z, lift) {
@@ -85,8 +102,9 @@
 
   // ---------- 空と遠景 ----------
   const SKIES = {
-    day: { top: '#6fbff0', fog: '#dff1fb', mount: '#a9c9de', hill: '#9fd08b', grass: ['#8fd16a', '#84c55f'], hemi: '#ffffff', sun: null },
-    evening: { top: '#4a3a78', fog: '#ffc18a', mount: '#8a6a9a', hill: '#9a7280', grass: ['#8f8a5a', '#857f52'], hemi: '#ffd8b8', sun: '#ffdf8a' },
+    day: { top: '#6fbff0', fog: '#dff1fb', city: '#b9cddc', city2: '#a5bccd', tower: '#e8eef2', grass: ['#8fd16a', '#84c55f'], hemi: '#ffffff', hemiI: 0.66, sunI: 0.5, sun: null, water: '#4a90c2' },
+    evening: { top: '#4a3a78', fog: '#ffc18a', city: '#9c7c96', city2: '#86687f', tower: '#f2d6c8', grass: ['#8f8a5a', '#857f52'], hemi: '#ffd8b8', hemiI: 0.62, sunI: 0.45, sun: '#ffdf8a', water: '#c97b6a' },
+    night: { top: '#050a22', fog: '#1b2346', city: '#1a2142', city2: '#141a36', tower: '#9fb4ff', grass: ['#22301f', '#1d2a1b'], hemi: '#8090ff', hemiI: 0.36, sunI: 0.12, sun: null, water: '#16264a', lights: true },
   };
   function skyTex(sky) {
     return Mo.canvasTex('sky|' + sky.top, 4, 256, (g, w, h) => {
@@ -98,40 +116,65 @@
       g.fillRect(0, 0, w, h);
     });
   }
+  // 遠くの東京の街並み（ビル群とタワー）。カメラと一緒に動く
   function buildBackdrop(sky) {
     const g = new T.Group();
-    const range = (color, y0, amp, seed, dist, width) => {
-      const sh = new T.Shape();
-      sh.moveTo(-width / 2, -5);
-      for (let i = 0; i <= 60; i++) {
-        const x = -width / 2 + (width * i) / 60;
-        const k = i * 0.37 + seed;
-        sh.lineTo(x, y0 + (Math.sin(k) * 0.5 + Math.sin(k * 2.3 + 1) * 0.3 + 0.8) * amp);
-      }
-      sh.lineTo(width / 2, -5);
-      const m = new T.Mesh(new T.ShapeGeometry(sh), new T.MeshBasicMaterial({ color: color, fog: false }));
-      m.position.z = -dist;
+    const r = Mo.rng(42);
+    const bmat = [new T.MeshBasicMaterial({ color: sky.city, fog: false }), new T.MeshBasicMaterial({ color: sky.city2, fog: false })];
+    for (let i = 0; i < 70; i++) {
+      const x = -900 + i * 26 + r() * 10;
+      const h = 15 + Math.pow(r(), 2) * 110;
+      const w = 14 + r() * 24;
+      const m = new T.Mesh(GEO.box, bmat[i % 2]);
+      m.scale.set(w, h, 20);
+      m.position.set(x, h / 2 - 8, -600 - r() * 60);
       g.add(m);
-    };
-    range(sky.mount, 0, 70, 1.3, 620, 2600);
-    range(sky.hill, -2, 26, 4.1, 560, 2400);
+    }
+    // 下町から見える高い電波塔（実在の塔を思わせるシルエット）
+    const tm = new T.MeshBasicMaterial({ color: sky.tower, fog: false });
+    const tower = new T.Group();
+    tower.add(mesh(new T.CylinderGeometry(1.2, 9, 280, 6), tm, null, 0, 140, 0, 1, 1, 1));
+    tower.add(mesh(new T.CylinderGeometry(9, 9, 10, 16), tm, null, 0, 190, 0, 1, 1, 1));
+    tower.add(mesh(new T.CylinderGeometry(6, 6, 7, 16), tm, null, 0, 240, 0, 1, 1, 1));
+    tower.add(mesh(new T.CylinderGeometry(0.6, 1.2, 60, 6), tm, null, 0, 310, 0, 1, 1, 1));
+    tower.position.set(-260, -8, -660);
+    g.add(tower);
+    if (sky.lights) {
+      // 夜景の窓あかり
+      const pts = [];
+      for (let i = 0; i < 900; i++) pts.push(-900 + r() * 1800, -6 + Math.pow(r(), 1.6) * 100, -585 - r() * 30);
+      const geo = new T.BufferGeometry();
+      geo.setAttribute('position', new T.Float32BufferAttribute(pts, 3));
+      g.add(new T.Points(geo, new T.PointsMaterial({ color: '#ffd98a', size: 2, sizeAttenuation: false, fog: false })));
+      const stars = [];
+      for (let i = 0; i < 300; i++) stars.push(-1200 + r() * 2400, 150 + r() * 400, -700);
+      const sg = new T.BufferGeometry();
+      sg.setAttribute('position', new T.Float32BufferAttribute(stars, 3));
+      g.add(new T.Points(sg, new T.PointsMaterial({ color: '#ffffff', size: 1.5, sizeAttenuation: false, fog: false })));
+      for (const y of [192, 242]) g.add(mesh(new T.CylinderGeometry(9.3, 9.3, 1.5, 16), new T.MeshBasicMaterial({ color: '#7fd0ff', fog: false }), null, -260, y - 8, -660, 1, 1, 1));
+    }
     if (sky.sun) {
       const s = new T.Sprite(new T.SpriteMaterial({ map: Mo.glowTex, color: sky.sun, fog: false, transparent: true, depthWrite: false }));
       s.scale.set(180, 180, 1);
-      s.position.set(0, 40, -640);
+      s.position.set(80, 30, -640);
       g.add(s);
     }
-    for (let i = 0; i < 7; i++) {
-      const c = new T.Sprite(new T.SpriteMaterial({ map: Mo.glowTex, color: sky.sun ? '#ffd0c0' : '#ffffff', fog: false, transparent: true, opacity: 0.85, depthWrite: false }));
-      c.scale.set(140 + i * 20, 40 + (i % 3) * 10, 1);
-      c.position.set(-500 + i * 170, 90 + (i % 2) * 40, -600);
-      g.add(c);
+    if (!sky.lights) {
+      for (let i = 0; i < 7; i++) {
+        const c = new T.Sprite(new T.SpriteMaterial({ map: Mo.glowTex, color: sky.sun ? '#ffd0c0' : '#ffffff', fog: false, transparent: true, opacity: 0.85, depthWrite: false }));
+        c.scale.set(140 + i * 20, 40 + (i % 3) * 10, 1);
+        c.position.set(-500 + i * 170, 130 + (i % 2) * 40, -620);
+        g.add(c);
+      }
     }
     return g;
   }
 
-  function applySky(stage, zone) {
-    const key = zone.type === 'market' ? 'market' : stage.sky || 'day';
+  function skyFor(stage, night) {
+    return night ? 'night' : stage.sky || 'day';
+  }
+  function applySky(stage, zone, night) {
+    const key = zone.type === 'market' ? 'market' : skyFor(stage, night);
     if (key === skyKey) return;
     skyKey = key;
     if (backdrop) {
@@ -143,13 +186,15 @@
       scene.fog = new T.Fog('#efe9dc', 70, DRAW);
       hemi.color.set('#ffffff');
       hemi.intensity = 0.62;
+      sun.intensity = 0.5;
       return;
     }
     const sky = SKIES[key];
     scene.background = skyTex(sky);
     scene.fog = new T.Fog(sky.fog, 90, DRAW);
     hemi.color.set(sky.hemi);
-    hemi.intensity = 0.66;
+    hemi.intensity = sky.hemiI;
+    sun.intensity = sky.sunI;
     backdrop = buildBackdrop(sky);
     scene.add(backdrop);
   }
@@ -164,13 +209,13 @@
     const groups = new Map();
     return {
       // basic: true ならライトの影響を受けない（光っている物）
-      add(geo, color, x, y, z, sx, sy, sz, ry, basic) {
+      add(geo, color, x, y, z, sx, sy, sz, ry, basic, rx) {
         const key = basic ? 'b' : 'l';
         let byGeo = groups.get(key);
         if (!byGeo) groups.set(key, (byGeo = new Map()));
         let arr = byGeo.get(geo);
         if (!arr) byGeo.set(geo, (arr = []));
-        arr.push([color, x, y, z, sx, sy, sz, ry || 0]);
+        arr.push([color, x, y, z, sx, sy, sz, ry || 0, rx || 0]);
       },
       build(parent) {
         for (const [key, byGeo] of groups) for (const [geo, arr] of byGeo) {
@@ -178,7 +223,7 @@
           arr.forEach((a, i) => {
             dummy.position.set(a[1], a[2], a[3]);
             dummy.scale.set(a[4], a[5], a[6]);
-            dummy.rotation.set(0, a[7], 0);
+            dummy.rotation.set(a[8], a[7], 0);
             dummy.updateMatrix();
             im.setMatrixAt(i, dummy.matrix);
             im.setColorAt(i, tmpColor.set(a[0]));
@@ -246,69 +291,296 @@
       return;
     }
 
-    const sky = SKIES[stage.sky || 'day'];
-    plane(g, -150, 150, -0.02, za, zb, texMat(Mo.repeated(Mo.stripeTex('grass|' + sky.grass[0], sky.grass[0], sky.grass[1]), 'grass|' + sky.grass[0], 1, L / 8)));
-    if (zone.type === 'street') {
-      for (const s of [-1, 1]) {
-        box(g, 1.6, 0.12, L, s * (RW + 0.8 + 0.18), 0.06, zc, '#d8d4cb');
-        box(g, 0.18, 0.16, L, s * (RW + 0.09), 0.08, zc, '#b8b3a8');
+    const sky = SKIES[skyFor(stage, G_night)];
+    const night = !!sky.lights;
+    if (zone.type === 'shotengai') return buildShotengai(g, inst, zone, za, zb, RW, night);
+    if (zone.type === 'avenue') return buildAvenue(g, inst, stage, zone, za, zb, RW, sky);
+    if (zone.type === 'bridge') return buildBridge(g, inst, za, zb, RW, sky);
+    return buildExpressway(g, inst, stage, zone, za, zb, RW, sky);
+  }
+
+  // ---------- 東京の景色 ----------
+  // 店先（商店街）。4軒ぶん（24m）の絵を1枚にして繰り返す
+  const SHOPS = [
+    ['八百屋', '#3c8d5a', '#7bc043'],
+    ['魚屋', '#2b6fa8', '#9fd3f0'],
+    ['精肉店', '#a33b3b', '#f19a9a'],
+    ['惣菜', '#d97b2b', '#ffd166'],
+    ['豆腐', '#4a5a6a', '#f4f1ea'],
+    ['薬局', '#2e8bc0', '#ffffff'],
+    ['本屋', '#6b4f3a', '#f2e6d9'],
+    ['喫茶', '#5a3b2a', '#f5d08a'],
+    ['和菓子', '#8a5a9e', '#fde0e3'],
+    ['花屋', '#d9537f', '#fbd3e0'],
+    ['電器店', '#3d6fa8', '#d9ecf7'],
+    ['たい焼き', '#c0392b', '#ffe8a3'],
+  ];
+  function shopStripTex(variant, night) {
+    return Mo.canvasTex(`shops|${variant}|${night}`, 1024, 160, (g, W, H) => {
+      const r = Mo.rng(variant * 131 + 7);
+      for (let k = 0; k < 4; k++) {
+        const x0 = (k * W) / 4;
+        const w = W / 4;
+        const [name, col, goods] = SHOPS[Math.floor(r() * SHOPS.length)];
+        g.fillStyle = '#d9d2c4';
+        g.fillRect(x0, 0, w, H);
+        // 中（夜は明るく）
+        g.fillStyle = night ? '#ffe9b0' : '#4a4038';
+        g.fillRect(x0 + 8, 50, w - 16, H - 50);
+        // 商品の台
+        g.fillStyle = '#8a6a4a';
+        g.fillRect(x0 + 14, H - 40, w - 28, 40);
+        for (let i = 0; i < 9; i++) {
+          g.fillStyle = i % 3 === 0 ? goods : Mo.shade(goods, -0.15 * (i % 2));
+          g.beginPath();
+          g.arc(x0 + 26 + i * ((w - 52) / 8), H - 44, 9, 0, Math.PI * 2);
+          g.fill();
+        }
+        // 日よけ（ストライプ）
+        for (let i = 0; i < 8; i++) {
+          g.fillStyle = i % 2 ? '#ffffff' : col;
+          g.fillRect(x0 + (i * w) / 8, 30, w / 8 + 1, 22);
+        }
+        // 看板
+        g.fillStyle = col;
+        g.fillRect(x0, 0, w, 30);
+        g.fillStyle = '#ffffff';
+        g.font = '900 24px "M PLUS Rounded 1c","Hiragino Sans",sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(name, x0 + w / 2, 16);
+        g.fillStyle = '#6b6258';
+        g.fillRect(x0 + w - 4, 0, 4, H);
       }
-      plane(g, -RW, RW, 0, za, zb, texMat(Mo.repeated(Mo.roadTex('street'), 'road-street', 1, L / 8)));
-      for (let z = Math.ceil(za / 9) * 9; z < zb; z += 9) {
-        for (const s of [-1, 1]) {
-          const r = hash(z, s + 5, 1);
-          if (r < 0.6) {
-            const k = Math.floor(r * 8.3) % HOUSE_COLORS.length;
-            const x = s * (RW + 5.6 + r * 2);
-            inst.add(GEO.box, HOUSE_COLORS[k], x, 1.2, -z, 3.6, 2.4, 3.4);
-            inst.add(GEO.prism, ROOF_COLORS[k], x, 2.4, -z, 4.0, 2.6, 3.8);
-            inst.add(GEO.box, '#8a5a3c', x - s * 0.0 + 0.8, 0.8, -z + 1.71, 0.8, 1.6, 0.05);
-            inst.add(GEO.box, '#9fd3f0', x - 0.9, 1.5, -z + 1.71, 1.0, 0.8, 0.05);
-          } else {
-            const x = s * (RW + 3.2 + r * 2);
-            tree(inst, x, -z, 0.9 + r * 0.4);
+    });
+  }
+  function windowsTex(kind, night) {
+    return Mo.canvasTex(`win|${kind}|${night}`, 128, 128, (g, W, H) => {
+      const r = Mo.rng(kind.length * 17 + (night ? 3 : 0));
+      const base = { office: '#c7d0d8', apart: '#efe6d8', brick: '#b98a6a', upper: '#e8dccb' }[kind];
+      g.fillStyle = night ? Mo.shade(base, -0.75) : base;
+      g.fillRect(0, 0, W, H);
+      const cols = kind === 'office' ? 4 : 3;
+      const rows = 3;
+      for (let j = 0; j < rows; j++)
+        for (let i = 0; i < cols; i++) {
+          const lit = night && r() < 0.55;
+          g.fillStyle = lit ? (r() < 0.5 ? '#ffd98a' : '#fff2c8') : night ? '#1c2440' : kind === 'office' ? '#7fa6c4' : '#8fb3c9';
+          const cw = W / cols;
+          const ch = H / rows;
+          g.fillRect(i * cw + cw * 0.15, j * ch + ch * 0.2, cw * 0.7, ch * 0.55);
+          if (kind === 'apart' && !night) {
+            g.fillStyle = '#d6cbb8';
+            g.fillRect(i * cw, j * ch + ch * 0.82, cw, ch * 0.12);
           }
         }
+    });
+  }
+  function facadeMat(kind, night, rx, ry) {
+    const base = windowsTex(kind, night);
+    return texMat(Mo.repeated(base, `win|${kind}|${night}`, Math.max(1, Math.round(rx)), Math.max(1, Math.round(ry))));
+  }
+  function pavingTex() {
+    return Mo.canvasTex('paving', 128, 128, (g, W, H) => {
+      g.fillStyle = '#cfc6b6';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#c2b8a6';
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) if ((i + j) % 2) g.fillRect(i * 32, j * 32, 32, 32);
+      g.fillStyle = 'rgba(120,110,95,0.4)';
+      for (let k = 0; k <= 4; k++) {
+        g.fillRect(0, k * 32, W, 1);
+        g.fillRect(k * 32, 0, 1, H);
       }
-      for (let z = Math.ceil(za / 25) * 25; z < zb; z += 25) {
-        const s = hash(z, 9, 2) < 0.5 ? -1 : 1;
-        inst.add(GEO.cylLow, '#9a9a92', s * (RW + 1.0), 3, -z, 0.1, 6, 0.1);
-        inst.add(GEO.box, '#9a9a92', s * (RW + 1.0), 5.5, -z, 1.4, 0.1, 0.1);
-      }
-      return;
-    }
+    });
+  }
 
-    // 高速道路
-    plane(g, -RW - 1.4, RW + 1.4, -0.01, za, zb, M('#6f747b'));
-    plane(g, -RW, RW, 0, za, zb, texMat(Mo.repeated(Mo.roadTex('highway'), 'road-highway', 1, L / 8)));
-    const evening = stage.sky === 'evening';
-    for (const s of [-1, 1]) {
-      const x = s * (RW + 1.1);
-      box(g, 0.12, 0.32, L, x, 0.64, zc, '#d7dde3');
-      for (let z = Math.ceil(za / 4) * 4; z < zb; z += 4) inst.add(GEO.cylLow, '#8d949b', x, 0.3, -z, 0.06, 0.6, 0.06);
-      for (let z = Math.ceil(za / 30) * 30; z < zb; z += 30) {
-        const lx = s * (RW + 1.8);
-        inst.add(GEO.cylLow, '#9aa1a8', lx, 2.9, -z, 0.08, 5.8, 0.08);
-        inst.add(GEO.box, '#9aa1a8', lx - s * 0.7, 5.8, -z, 1.4, 0.08, 0.08);
-        inst.add(GEO.box, evening ? '#ffe6a0' : '#fff6c2', lx - s * 1.35, 5.72, -z, 0.5, 0.12, 0.3, 0, true);
-      }
-      for (let z = Math.ceil(za / 12) * 12; z < zb; z += 12) {
-        const r = hash(z, s + 3, 4);
-        if (r < 0.55) tree(inst, s * (RW + 5 + r * 14), -z, 0.9 + r * 0.5);
+  // 商店街のアーケード
+  function buildShotengai(g, inst, zone, za, zb, RW, night) {
+    const L = zb - za;
+    const zc = -(za + zb) / 2;
+    const ROOF = 7.2;
+    plane(g, -RW - 1.5, RW + 1.5, 0, za, zb, texMat(Mo.repeated(pavingTex(), 'paving', RW + 0.75, L / 2)));
+    for (const side of [-1, 1]) {
+      const variant = Math.floor(hash(Math.floor(za / CHUNK), side + 7, 2) * 4);
+      const shop = texMat(Mo.repeated(shopStripTex(variant, night), `shops|${variant}|${night}`, L / 24, 1));
+      const wall = M('#b8ad9c');
+      const mats = [wall, wall, wall, wall, wall, wall];
+      mats[side < 0 ? 0 : 1] = shop;
+      mesh(GEO.box, mats, g, side * (RW + 1.5 + 2), 1.85, zc, 4, 3.7, L);
+      // 2階（住まい）
+      const up = facadeMat('upper', night, L / 6, 1);
+      const umats = [wall, wall, M('#8a7a6a'), wall, wall, wall];
+      umats[side < 0 ? 0 : 1] = up;
+      mesh(GEO.box, umats, g, side * (RW + 1.5 + 2.4), 3.7 + 1.6, zc, 4, 3.2, L);
+    }
+    // アーケードの屋根と骨組み、ちょうちん
+    const roof = plane(g, -RW - 1.6, RW + 1.6, ROOF, za, zb, MB(night ? '#3a3f55' : '#f3efe4', { transparent: true, opacity: night ? 0.95 : 0.75, side: T.DoubleSide }));
+    roof.renderOrder = 3;
+    for (let z = Math.ceil(za / 6) * 6; z < zb; z += 6) {
+      inst.add(GEO.box, '#8e979f', 0, ROOF - 0.1, -z, (RW + 1.6) * 2, 0.18, 0.18);
+      for (const s of [-1, 1]) inst.add(GEO.box, '#8e979f', s * (RW + 1.5), (ROOF + 3.7) / 2, -z, 0.16, ROOF - 3.7, 0.16);
+      const s = (z / 6) % 2 ? 1 : -1;
+      inst.add(GEO.sphereLow, night ? '#ff6a4a' : '#e8483a', s * (RW - 0.2), 5.2, -z, 0.32, 0.42, 0.32, 0, night);
+      inst.add(GEO.cylLow, '#2b2d42', s * (RW - 0.2), 5.7, -z, 0.02, 1.0, 0.02);
+    }
+  }
+
+  function buildBuildings(g, inst, za, zb, RW, sky, setback) {
+    const night = !!sky.lights;
+    for (const side of [-1, 1]) {
+      let z = za;
+      while (z < zb) {
+        const r = hash(Math.floor(z), side + 11, 3);
+        const len = Math.min(zb - z, 10 + Math.floor(r * 3) * 4);
+        const hgt = 9 + Math.floor(hash(Math.floor(z), side, 5) * 8) * 4;
+        const kind = ['office', 'apart', 'brick', 'office'][Math.floor(hash(Math.floor(z), side, 6) * 4)];
+        const depth = 12;
+        const mat = facadeMat(kind, night, len / 4, hgt / 4);
+        mesh(GEO.box, mat, g, side * (RW + setback + depth / 2), hgt / 2, -(z + len / 2), depth, hgt, len - 0.6);
+        z += len;
       }
     }
-    for (let z = Math.ceil((za - 200) / 400) * 400 + 200; z < zb; z += 400) {
+  }
+
+  // 大通り（江戸通り・清澄通りなど）
+  function buildAvenue(g, inst, stage, zone, za, zb, RW, sky) {
+    const L = zb - za;
+    const zc = -(za + zb) / 2;
+    plane(g, -RW, RW, 0, za, zb, texMat(Mo.repeated(Mo.roadTex('avenue'), 'road-avenue', 1, L / 8)));
+    for (const s of [-1, 1]) {
+      box(g, 3.2, 0.15, L, s * (RW + 1.6), 0.075, zc, '#cfc8bb');
+      box(g, 0.2, 0.18, L, s * (RW + 0.1), 0.09, zc, '#a9a294');
+    }
+    buildBuildings(g, inst, za, zb, RW, sky, 3.4);
+    const night = !!sky.lights;
+    for (let z = Math.ceil(za / 12) * 12; z < zb; z += 12) {
+      for (const s of [-1, 1]) {
+        // イチョウ並木
+        const x = s * (RW + 2.0);
+        inst.add(GEO.cylLow, '#6b4f3a', x, 0.9, -z, 0.14, 1.8, 0.14);
+        inst.add(GEO.cone, night ? '#2f4a2a' : '#a6c94a', x, 3.1, -z, 1.1, 3.0, 1.1);
+      }
+    }
+    for (let z = Math.ceil(za / 24) * 24 + 6; z < zb; z += 24) {
+      for (const s of [-1, 1]) {
+        const x = s * (RW + 0.6);
+        inst.add(GEO.cylLow, '#7d8790', x, 3.2, -z, 0.08, 6.4, 0.08);
+        inst.add(GEO.box, '#7d8790', x - s * 0.8, 6.4, -z, 1.6, 0.08, 0.08);
+        inst.add(GEO.box, night ? '#ffe6a0' : '#fff6c2', x - s * 1.5, 6.3, -z, 0.5, 0.12, 0.3, 0, true);
+      }
+    }
+    // 交差点（横断歩道と信号）
+    for (let z = Math.ceil(za / 160) * 160 + 80; z < zb; z += 160) {
+      const cw = plane(g, -RW, RW, 0.01, z, z + 4, texMat(crosswalkTex(), { transparent: true, depthWrite: false }));
+      cw.renderOrder = 1;
+      for (const s of [-1, 1]) {
+        const x = s * (RW + 0.8);
+        inst.add(GEO.cylLow, '#7d8790', x, 2.8, -(z - 2), 0.1, 5.6, 0.1);
+        inst.add(GEO.box, '#7d8790', x - s * 2.2, 5.5, -(z - 2), 4.4, 0.1, 0.1);
+        inst.add(GEO.box, '#3a3f45', x - s * 3.6, 5.5, -(z - 2), 1.2, 0.4, 0.3);
+        inst.add(GEO.sphereLow, '#2ee07a', x - s * 4.0, 5.5, -(z - 2) + 0.16, 0.12, 0.12, 0.05, 0, true);
+      }
+    }
+  }
+  function crosswalkTex() {
+    return Mo.canvasTex('crosswalk', 256, 32, (g, W, H) => {
+      g.clearRect(0, 0, W, H);
+      g.fillStyle = 'rgba(0,0,0,0)';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#ffffff';
+      for (let i = 0; i < 10; i++) g.fillRect(i * 26 + 6, 0, 14, H);
+    });
+  }
+
+  // 隅田川の橋（アーチ橋）
+  function buildBridge(g, inst, za, zb, RW, sky) {
+    const L = zb - za;
+    const zc = -(za + zb) / 2;
+    plane(g, -RW, RW, 0, za, zb, texMat(Mo.repeated(Mo.roadTex('avenue'), 'road-avenue', 1, L / 8)));
+    plane(g, -400, 400, -9, za, zb, M(sky.water));
+    const steel = sky.lights ? '#3f78c8' : '#5fa8d3';
+    for (const s of [-1, 1]) {
+      box(g, 1.4, 0.3, L, s * (RW + 0.7), 0.15, zc, '#bfc4c8');
+      box(g, 0.1, 1.0, L, s * (RW + 1.35), 0.8, zc, steel);
+      // アーチ（120m ごと）。区間の中の部分だけ作る
+      const span = 120;
+      for (let z = Math.ceil(za / 3) * 3; z < zb; z += 3) {
+        const u = (((z - 3400) % span) + span) % span; // 0..span
+        const k = u / span;
+        const y = 1 + 15 * 4 * k * (1 - k);
+        const y2 = 1 + 15 * 4 * ((u + 3) / span) * (1 - (u + 3) / span);
+        const ang = Math.atan2(y2 - y, 3);
+        inst.add(GEO.box, steel, s * (RW + 1.4), (y + y2) / 2, -(z + 1.5), 0.6, 0.6, 3.15, 0, false, -ang);
+        if (Math.round(u) % 9 === 0) inst.add(GEO.box, steel, s * (RW + 1.4), y / 2, -z, 0.12, y, 0.12);
+      }
+    }
+  }
+
+  // 首都高（高架）。湾岸では下が海
+  function buildExpressway(g, inst, stage, zone, za, zb, RW, sky) {
+    const L = zb - za;
+    const zc = -(za + zb) / 2;
+    const night = !!sky.lights;
+    plane(g, -RW - 1.2, RW + 1.2, -0.01, za, zb, M('#6f747b'));
+    plane(g, -RW, RW, 0, za, zb, texMat(Mo.repeated(Mo.roadTex('highway'), 'road-highway', 1, L / 8)));
+    // 下の景色（海 or 街）
+    plane(g, -500, 500, -14, za, zb, M(zone.bay ? sky.water : night ? '#141826' : '#8a8f86'));
+    for (const s of [-1, 1]) {
+      box(g, 0.35, 1.1, L, s * (RW + 1.4), 0.55, zc, '#c9ccd0');
+      box(g, 1.2, 1.2, L, s * (RW + 0.6), -0.6, zc, '#b0b4b8');
+      // 防音壁（ところどころ）
+      if (hash(Math.floor(za / 60), s, 9) < 0.55) {
+        const wall = box(g, 0.08, 2.8, L, s * (RW + 1.45), 2.5, zc, MB(night ? '#2a3a55' : '#a8c4d4', { transparent: true, opacity: 0.4, depthWrite: false }));
+        wall.renderOrder = 3;
+      }
+      for (let z = Math.ceil(za / 30) * 30; z < zb; z += 30) {
+        const lx = s * (RW + 1.4);
+        inst.add(GEO.cylLow, '#9aa1a8', lx, 3.6, -z, 0.08, 6, 0.08);
+        inst.add(GEO.box, '#9aa1a8', lx - s * 0.7, 6.6, -z, 1.4, 0.08, 0.08);
+        inst.add(GEO.box, night ? '#ffb347' : '#fff6c2', lx - s * 1.35, 6.5, -z, 0.5, 0.12, 0.3, 0, true);
+      }
+      // 橋脚
+      for (let z = Math.ceil(za / 40) * 40; z < zb; z += 40) inst.add(GEO.box, '#a9adb1', 0, -7.5, -z, 2.4, 13, 2.4);
+    }
+    // 周りのビル群 / 湾岸のクレーン
+    for (let z = Math.ceil(za / 20) * 20; z < zb; z += 20) {
+      for (const s of [-1, 1]) {
+        const r = hash(z, s, 21);
+        if (zone.bay) {
+          if (r < 0.12) crane(inst, s * (70 + r * 300), -z, night);
+        } else if (r < 0.7) {
+          const h = 6 + r * 40;
+          const x = s * (RW + 14 + r * 40);
+          inst.add(GEO.box, night ? '#1d2238' : ['#c9ced3', '#b9c2c9', '#d8d0c4'][Math.floor(r * 30) % 3], x, -14 + h / 2, -z, 12, h, 14);
+          if (night) for (let k = 0; k < 4; k++) inst.add(GEO.box, '#ffd98a', x - s * 6.05, -12 + k * (h / 4), -z + (k % 2 ? 3 : -3), 0.05, 0.8, 2.5, 0, true);
+        }
+      }
+    }
+    // 案内標識（門型）
+    for (let z = Math.ceil((za - 250) / 500) * 500 + 250; z < zb; z += 500) {
       if (z < za) continue;
-      const km = Math.max(1, Math.round((stage.length - z) / 250));
-      const label = `${stage.goalLabel}まで ${km}km`;
-      const x = RW + 3.2;
-      for (const d of [-1.3, 1.3]) inst.add(GEO.cylLow, '#8d949b', x + d, 2.4, -z, 0.1, 4.8, 0.1);
-      const sign = new T.Mesh(GEO.plane, new T.MeshBasicMaterial({ map: Mo.textTex(label, '#1f7a4d', '#ffffff', 512, 192, { border: '#ffffff' }) }));
-      sign.position.set(x, 5.2, -z);
-      sign.scale.set(3.8, 1.42, 1);
+      const next = nextCpName(stage, z);
+      const km = Math.max(1, Math.round(next.dist / 250));
+      for (const s of [-1, 1]) inst.add(GEO.box, '#8d949b', s * (RW + 1.2), 3.6, -z, 0.25, 7.2, 0.25);
+      inst.add(GEO.box, '#8d949b', 0, 7.0, -z, (RW + 1.2) * 2, 0.3, 0.3);
+      const sign = new T.Mesh(GEO.plane, new T.MeshBasicMaterial({ map: Mo.textTex(`${next.name}  ${km}km`, '#1f7a4d', '#ffffff', 768, 160, { border: '#ffffff' }) }));
+      sign.position.set(RW * 0.4, 7.9, -z + 0.2);
+      sign.scale.set(5.6, 1.2, 1);
       g.add(sign);
     }
   }
+  function crane(inst, x, z, night) {
+    const c = night ? '#7a2f2f' : '#d9534f';
+    for (const dx of [-3, 3]) for (const dz of [-3, 3]) inst.add(GEO.box, c, x + dx, 6, z + dz, 0.6, 40, 0.6);
+    inst.add(GEO.box, c, x, 26, z, 8, 1.2, 8);
+    inst.add(GEO.box, c, x - Math.sign(x) * 18, 30, z, 50, 1.2, 1.2);
+    inst.add(GEO.box, '#ffffff', x, 24, z, 4, 3, 4);
+  }
+  function nextCpName(stage, z) {
+    for (let i = 0; i < stage.checkpoints.length; i++) if (stage.checkpoints[i] > z) return { name: stage.cpNames[i], dist: stage.checkpoints[i] - z };
+    return { name: stage.goalLabel, dist: stage.length - z };
+  }
+
   function tree(inst, x, z, s) {
     inst.add(GEO.cylLow, '#8a5a3c', x, 0.7 * s, z, 0.14 * s, 1.4 * s, 0.14 * s);
     inst.add(GEO.ico, '#4f9e4a', x, 2.0 * s, z, 0.95 * s, 0.85 * s, 0.95 * s);
@@ -369,13 +641,13 @@
     skyKey = '';
     const st = G.stage;
     const rw = (z) => THEMES[zoneAt(st, z).type].roadW;
-    st.checkpoints.forEach((cz) => {
-      const g = Mo.buildGate(Math.max(rw(cz - 0.5), rw(cz + 0.5)), 'CHECKPOINT', false);
+    st.checkpoints.forEach((cz, k) => {
+      const g = Mo.buildGate(Math.max(rw(cz - 0.5), rw(cz + 0.5)), `CHECKPOINT  ${st.cpNames[k]}`, false);
       g.position.z = -cz;
       gates.push(g);
       stageObjs.push(g);
     });
-    const goal = Mo.buildGate(rw(st.length), `GOAL ${st.goalLabel}`, true);
+    const goal = Mo.buildGate(rw(st.length), `GOAL  ${st.goalLabel}`, true);
     goal.position.z = -st.length;
     stageObjs.push(goal);
     let scenery;
@@ -386,7 +658,7 @@
       scenery = Mo.buildStore();
       scenery.position.z = -(st.length + 70);
     } else {
-      scenery = Mo.buildHouseBig('わが家');
+      scenery = Mo.buildHouseBig(st.goalLabel);
       scenery.position.z = -(st.length + 70);
     }
     stageObjs.push(scenery);
@@ -413,6 +685,16 @@
         return Mo.buildCar(o);
       case 'truck':
         return Mo.buildTruck(o);
+      case 'bus':
+        return Mo.buildBus(o);
+      case 'kanban':
+        return Mo.buildKanban(o);
+      case 'bar':
+        return Mo.buildBar(o);
+      case 'noren':
+        return Mo.buildNoren(o, false);
+      case 'banner':
+        return Mo.buildNoren(o, true);
       case 'bike':
         return Mo.buildBike(o);
       case 'cone':
@@ -449,6 +731,12 @@
       }
       return;
     }
+    if (o.flying) {
+      m.position.set(o.x, o.fy, -o.z);
+      m.rotation.set(o.rx, o.ry, o.rz);
+      if (o.kind === 'car' || o.kind === 'truck' || o.kind === 'bus') Mo.setBlink(m, 0, false);
+      return;
+    }
     m.position.set(o.x, 0, -o.z);
     if (o.kind === 'item') {
       m.visible = !o.taken;
@@ -463,7 +751,7 @@
       m.userData.legs[1].rotation.x = -sw;
     }
     if (o.kind === 'cat') m.rotation.y = o.vx < 0 ? Math.PI : 0;
-    if (o.kind === 'car' || o.kind === 'truck') Mo.setBlink(m, o.blinkDir, Math.floor(t * 5) % 2 === 0);
+    if (o.kind === 'car' || o.kind === 'truck' || o.kind === 'bus') Mo.setBlink(m, o.blinkDir, Math.floor(t * 5) % 2 === 0);
     if (o.hit) {
       const k = Math.exp(-o.wob * 3);
       m.rotation.z = Math.sin(o.wob * 22) * 0.3 * k;
@@ -477,15 +765,31 @@
     p.root.position.set(P.x, P.y, -P.z);
     p.root.rotation.z = -P.steer * 0.12;
     p.root.rotation.y = -P.steer * 0.12;
-    const grounded = P.y <= 0.001 || P.onRamp;
+    const grounded = P.y <= 0.001 || P.onRamp || P.onObj;
     const run = Math.sin(P.phase);
-    p.legs[0].rotation.x = grounded ? run * 0.8 : 0.7;
-    p.legs[1].rotation.x = grounded ? -run * 0.8 : -0.2;
-    p.body.position.y = grounded ? Math.abs(run) * 0.03 : 0;
+    if (P.slide > 0) {
+      // スライディング: 体を低く、後ろに倒して脚を前へ
+      p.legs[0].rotation.x = 1.15;
+      p.legs[1].rotation.x = 1.0;
+      p.body.position.y = -0.32;
+      p.body.rotation.x = 0.45;
+    } else {
+      p.legs[0].rotation.x = grounded ? run * 0.8 : 0.7;
+      p.legs[1].rotation.x = grounded ? -run * 0.8 : -0.2;
+      p.body.position.y = grounded ? Math.abs(run) * 0.03 : 0;
+      p.body.rotation.x = 0;
+    }
+    p.body.visible = camMode !== 'fp';
+    p.goods.visible = camMode !== 'fp';
     // 空中の回転技
     const tr = P.trick;
     p.flip.rotation.set(0, 0, 0);
-    if (tr) {
+    if (P.tumble) {
+      // ぶつかって転倒
+      const e = clamp(P.tumble.t / P.tumble.dur, 0, 1);
+      p.flip.rotation.x = -Math.PI * 2 * e;
+      p.flip.rotation.z = Math.sin(e * Math.PI) * 0.8;
+    } else if (tr) {
       const e = clamp(tr.t / tr.dur, 0, 1);
       const k = e * e * (3 - 2 * e);
       const a = Math.PI * 2 * tr.turns * k;
@@ -498,8 +802,9 @@
       }
     }
     // 影は地面（坂の上ならその表面）に
-    p.shadow.position.y = (P.onRamp ? 0 : -P.y) + 0.03;
-    const sc = 1 / (1 + (P.onRamp ? 0 : P.y) * 0.25);
+    const onTop = P.onRamp || P.onObj;
+    p.shadow.position.y = (onTop ? 0 : -P.y) + 0.03;
+    const sc = 1 / (1 + (onTop ? 0 : P.y) * 0.25);
     p.shadow.scale.set(1.4 * sc, 2.4 * sc, 1);
     p.rig.visible = !(G.invuln > 0 && Math.floor(G.invuln * 14) % 2 === 0) && G.showPlayer !== false;
   }
@@ -517,9 +822,10 @@
     const st = G.stage;
     if (builtFor !== G.runId) {
       builtFor = G.runId;
+      G_night = !!G.night;
       rebuildStage(G);
     }
-    applySky(st, zoneAt(st, P.z));
+    applySky(st, zoneAt(st, P.z), G_night);
     updateChunks(st, P);
     gates.forEach((g, k) => {
       if (k < G.cpIndex && !g.userData.passed) {
@@ -547,11 +853,33 @@
     }
     const sx = R.shake > 0 ? (Math.random() - 0.5) * R.shake * 1.2 : 0;
     const sy = R.shake > 0 ? (Math.random() - 0.5) * R.shake * 0.8 : 0;
-    camera.position.set(R.camX + sx, CAM.h + R.lift + sy, -(P.z - CAM.back));
-    camera.lookAt(R.camX * 0.9, CAM.lookY + R.lift * 0.85, -(P.z + CAM.ahead));
+    if (camMode === 'fp') {
+      // 一人称: 主婦の目の高さ。回転技では画面を回さない（酔いにくくするため）
+      const eye = P.slide > 0 ? 0.9 : 1.45;
+      camera.position.set(P.x + sx * 0.5, P.y + eye + sy * 0.5, -(P.z + 0.25));
+      camera.lookAt(P.x + P.steer * 0.8, P.y + eye - 0.35, -(P.z + 30));
+    } else {
+      camera.position.set(R.camX + sx, CAM.h + R.lift + sy, -(P.z - CAM.back));
+      camera.lookAt(R.camX * 0.9, CAM.lookY + R.lift * 0.85, -(P.z + CAM.ahead));
+    }
     if (backdrop) backdrop.position.set(camera.position.x * 0.6, 0, camera.position.z);
 
     renderer.render(scene, camera);
+    if (R.wantShot) {
+      R.wantShot = false;
+      try {
+        R.shot = renderer.domElement.toDataURL('image/jpeg', 0.85);
+      } catch (e) {
+        R.shot = null;
+      }
+    }
+  }
+  // 結果画像用に、次に描いた画面を写真として残す
+  function requestSnapshot() {
+    R.wantShot = true;
+  }
+  function getSnapshot() {
+    return R.shot || null;
   }
 
   // スピード線（2Dの重ね描き）
@@ -559,12 +887,12 @@
     const P = G.player;
     const th = THEMES[zoneAt(G.stage, P.z).type];
     const sp = P.speed / th.maxSpeed;
-    if (!(sp > 0.8 || G.boost > 0) || G.state === 'menu') return;
+    if (!(sp > 0.8 || G.boost > 0 || G.sale > 0) || G.state === 'menu') return;
     const vp = toScreen(R.camX, 0.5, P.z + 300);
-    const boosting = G.boost > 0;
+    const boosting = G.boost > 0 || G.sale > 0;
     const lv = G.boostLevel || 0;
     const n = boosting ? 22 + lv * 10 : 14;
-    ctx.strokeStyle = boosting ? 'rgba(255,230,150,0.7)' : 'rgba(255,255,255,0.45)';
+    ctx.strokeStyle = G.sale > 0 ? `hsla(${(t * 400) % 360},100%,70%,0.8)` : boosting ? 'rgba(255,230,150,0.7)' : 'rgba(255,255,255,0.45)';
     ctx.lineWidth = boosting ? 3 : 2;
     ctx.beginPath();
     const fr = Math.floor(t * 24);
@@ -587,6 +915,9 @@
     CAM_BACK,
     init,
     setView,
+    setCameraMode,
+    requestSnapshot,
+    getSnapshot,
     setCamera,
     setShake,
     drawWorld,

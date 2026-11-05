@@ -25,6 +25,7 @@
           <div id="hearts" class="hearts" aria-label="HP"></div>
           <div id="hits" class="chip hidden"></div>
           <div id="speed-chip" class="chip speed"><b id="speed">0</b><small>km/h</small></div>
+          <div id="gauge" class="gauge"><div id="gauge-fill" class="gauge-fill"></div><span>SALE</span></div>
         </div>
         <div class="hud-center">
           <div id="timer-label" class="timer-label">のこり時間</div>
@@ -42,13 +43,15 @@
         <div class="progress-goal">🏁</div>
         <div id="progress-cart" class="progress-cart">🛒</div>
       </div>
+      <div id="next-cp" class="next-cp"></div>
       <div id="combo" class="combo hidden"></div>
+      <button id="btn-sale" class="btn-sale hidden" type="button">タイム<br />セール！</button>
       <div id="zone-label" class="zone-label"></div>
       <div id="banner" class="banner"></div>
       <div id="drag-hint" class="drag-hint hidden">
         <div class="drag-track"><span class="drag-finger">👆</span></div>
-        <p>画面のどこでも指を置いて<br />左右にスライド！</p>
-        <p id="drag-hint-sub" class="sub">PCでは ← → キーでも操作できます</p>
+        <p>指を置いて<b>左右にスライド</b><br />上にはらうと<b>ジャンプ</b>、下で<b>スライディング</b></p>
+        <p id="drag-hint-sub" class="sub">PC: ←→ 移動 / ↑・スペース ジャンプ / ↓ スライディング / E タイムセール</p>
       </div>
       <div class="boost-fx"></div>
       <div id="flash" class="flash"></div>
@@ -70,6 +73,7 @@
         </div>
         <div class="row-links">
           <a href="../../index.html" class="link">← ゲーム一覧</a>
+          <button id="btn-settings" class="link" type="button">⚙ 設定</button>
           <button id="btn-vibe" class="link" type="button">📳 振動 ON</button>
           <button id="btn-sound" class="link" type="button">🔊 サウンド ON</button>
         </div>
@@ -81,6 +85,10 @@
       <div class="panel menu-panel wide">
         <p class="eyebrow" id="stage-mode">チェックポイントモード</p>
         <h2 class="screen-title">ステージをえらぶ</h2>
+        <div class="seg time-seg" role="group" aria-label="昼と夜">
+          <button id="time-day" type="button">☀ 昼</button>
+          <button id="time-night" type="button">🌙 夜</button>
+        </div>
         <div id="stage-list" class="stage-list"></div>
         <button class="btn btn-ghost" data-go="title">もどる</button>
       </div>
@@ -94,36 +102,30 @@
           <div class="howto-block">
             <h3>操作</h3>
             <ul>
-              <li>画面のどこでも指を置いて、<b>左右にスライド</b>するとカートが動く</li>
-              <li>指を動かした分だけ横に動くので、すき間を狙って細かく調整しよう</li>
-              <li>右上の ❚❚ で一時停止</li>
+              <li>指を置いて<b>左右にスライド</b>：移動</li>
+              <li>指を<b>上にはらう</b>：ジャンプ（低い障害物や車を飛び越える・車の屋根に乗れる）</li>
+              <li>指を<b>下にはらう</b>：スライディング（のれんやバーの下をくぐる）。空中なら急降下</li>
+            </ul>
+          </div>
+          <div class="howto-block">
+            <h3>セールゲージとタイムセール</h3>
+            <ul>
+              <li>コーンや看板を<b>はね飛ばす</b>、空中で<b>技を決める</b>、<b>ギリギリで避ける</b>とゲージがたまる</li>
+              <li>満タンで右下の<b>タイムセール！</b>ボタン：しばらく無敵＋超加速。ぶつかった物を全部はね飛ばす</li>
             </ul>
           </div>
           <div class="howto-block">
             <h3>加速ジャンプ台</h3>
             <ul>
-              <li>オレンジの<b>ジャンプ台</b>に乗ると、ジャンプしながら一気に加速</li>
-              <li>ジャンプ中に次の台に乗ると<b>さらに加速</b>して長く飛べる（最大3段階）</li>
-              <li>空中では低い障害物を飛び越えられる。ただし着地点には要注意！</li>
+              <li>オレンジの坂を登ると大ジャンプ＆加速。空中で次の台に乗ると連続ジャンプ</li>
+              <li>トラックやバスの後ろの台は、屋根の上から大きく飛び出す</li>
             </ul>
           </div>
           <div class="howto-block">
-            <h3>ギリギリ回避</h3>
+            <h3>モード</h3>
             <ul>
-              <li>障害物すれすれで避けるとボーナス。続けるほど点数アップ</li>
-            </ul>
-          </div>
-          <div class="howto-block">
-            <h3>チェックポイントモード</h3>
-            <ul>
-              <li>のこり時間が0か、HPがなくなるとゲームオーバー</li>
-              <li>チェックポイントで<b>時間が追加</b>＋<b>HPが1回復</b></li>
-            </ul>
-          </div>
-          <div class="howto-block">
-            <h3>タイムアタック</h3>
-            <ul>
-              <li>HPなし。ぶつかるたびに<b>+3秒</b>。最速タイムを目指そう</li>
+              <li>チェックポイントモード：制限時間とHP3。チェックポイントで時間追加＋HP回復。ぶつかると -0.5秒</li>
+              <li>タイムアタック：ぶつかると +3秒。最速タイムを目指そう</li>
             </ul>
           </div>
         </div>
@@ -138,7 +140,46 @@
         <div class="btn-col">
           <button id="btn-resume" class="btn btn-primary">つづける</button>
           <button id="btn-restart" class="btn">はじめから</button>
+          <button id="btn-pause-settings" class="btn">⚙ 設定</button>
           <button id="btn-quit" class="btn btn-ghost">タイトルへ</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 設定 -->
+    <section id="screen-settings" class="screen hidden dim">
+      <div class="panel menu-panel">
+        <h2 class="screen-title">設定</h2>
+        <div class="setting">
+          <h3>カメラ視点</h3>
+          <div class="seg">
+            <button type="button" data-set="camera" data-val="normal">標準</button>
+            <button type="button" data-set="camera" data-val="high">見下ろし</button>
+            <button type="button" data-set="camera" data-val="fp">一人称</button>
+          </div>
+          <p class="note">一人称は主婦の目線。回転技でも画面は回りません。</p>
+        </div>
+        <div class="setting">
+          <h3>タイムセールの発動</h3>
+          <div class="seg">
+            <button type="button" data-set="saleAuto" data-val="false">ボタンで発動</button>
+            <button type="button" data-set="saleAuto" data-val="true">満タンで自動</button>
+          </div>
+        </div>
+        <button id="btn-settings-back" class="btn btn-primary">OK</button>
+      </div>
+    </section>
+
+    <!-- 結果画像 -->
+    <section id="screen-share" class="screen hidden dim">
+      <div class="panel menu-panel">
+        <h2 class="screen-title">結果の画像</h2>
+        <img id="share-img" class="share-img" alt="結果の画像" />
+        <p class="note" id="share-note">画像を長押しして保存できます</p>
+        <div class="btn-col">
+          <button id="btn-share-send" class="btn btn-primary">シェアする</button>
+          <a id="btn-share-dl" class="btn" download="cart-rush-result.png">画像を保存</a>
+          <button id="btn-share-close" class="btn btn-ghost">とじる</button>
         </div>
       </div>
     </section>
@@ -152,6 +193,7 @@
         <div id="result-rows" class="result-rows"></div>
         <div class="btn-col">
           <button id="btn-next" class="btn btn-primary hidden">次のステージへ</button>
+          <button id="btn-share" class="btn btn-accent">📷 結果を画像でシェア</button>
           <button id="btn-retry" class="btn btn-secondary">もう一度</button>
           <button id="btn-stages" class="btn btn-ghost">ステージ選択へ</button>
         </div>

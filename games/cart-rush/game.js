@@ -8,10 +8,13 @@
   const JUMP = window.CartJump;
   const SPEEDO = window.CartSpeedo;
   const CONTROL = window.CartControl;
+  const MOVE = window.CartMove;
+  const SALE = window.CartSale;
   const Render = window.CartRender;
   const { DRAW, CAM_BACK, zoneAt } = Render;
   const MAX_HP = 3;
   const REC_KEY = 'cartRush.records';
+  const SET_KEY = 'cartRush.settings';
 
   // 3D（WebGL）は #game、スピード線やパーティクルなど2Dの重ね描きは #fx に描く
   const canvas = document.getElementById('game');
@@ -19,10 +22,14 @@
   const fx = document.getElementById('fx');
   const ctx = fx.getContext('2d');
   const input = new Input(fx);
+  window.CartRushInput = input; // 開発用
   new ResizeObserver(() => resize()).observe(fx);
   const $ = (id) => document.getElementById(id);
 
   let records = storage.get(REC_KEY, {});
+  // 設定: カメラ視点 / タイムセールの発動方法 / 昼夜
+  const settings = Object.assign({ camera: 'normal', saleAuto: false, night: false }, storage.get(SET_KEY, {}));
+  Render.setCameraMode(settings.camera);
   let W = 0;
   let H = 0;
 
@@ -65,6 +72,23 @@
     },
     land() {
       audio.noise(0.12, { vol: 0.2, cutoff: 600 });
+    },
+    hop() {
+      audio.tone(520, 0.12, { type: 'square', to: 900, vol: 0.08 });
+    },
+    slide() {
+      audio.noise(0.25, { vol: 0.12, cutoff: 900 });
+    },
+    smash() {
+      audio.noise(0.15, { vol: 0.22, cutoff: 2600 });
+      audio.tone(700, 0.1, { type: 'square', to: 300, vol: 0.08 });
+    },
+    full() {
+      [880, 1175, 1568].forEach((f, i) => audio.tone(f, 0.1, { type: 'square', vol: 0.1, delay: i * 0.06 }));
+    },
+    sale() {
+      [523, 784, 1047, 1568].forEach((f, i) => audio.tone(f, 0.18, { type: 'sawtooth', vol: 0.12, delay: i * 0.07 }));
+      audio.noise(0.5, { vol: 0.15, cutoff: 4000 });
     },
     nearMiss(combo) {
       audio.tone(1200 + Math.min(combo, 8) * 120, 0.08, { type: 'square', vol: 0.09 });
@@ -121,12 +145,21 @@
     cone: { w: 0.22, len: 0.4, h: 0.75 },
     barrier: { w: 1.0, len: 0.3, h: 1.05 },
     cat: { w: 0.28, len: 0.5, h: 0.6 },
+    bus: { w: 1.25, len: 10, h: 3.1 },
+    kanban: { w: 0.35, len: 0.45, h: 1.1 }, // 立て看板（はね飛ばせる）
+    bar: { w: 1.4, len: 0.3, h: 1.35, y0: 1.0 }, // 工事・駐車場のバー（ジャンプかスライディング）
+    noren: { w: 1.4, len: 0.2, h: 2.4, y0: 1.0 }, // のれん・横断幕（スライディングでくぐる）
+    banner: { w: 1.5, len: 0.2, h: 2.6, y0: 1.05 }, // 店内の吊り下げ特売幕（スライディングでくぐる）
   };
+  // ぶつかってもダメージにならず、はね飛ばしてセールゲージがたまる軽い物
+  const LIGHT = new Set(['cone', 'wetsign', 'kanban']);
+  const VEHICLES = new Set(['car', 'truck', 'bus']);
   const SHIRTS = ['#5fa4e6', '#7bc66b', '#f3b740', '#b07ad6', '#ec6f6f', '#4fc1b5', '#f28dbb', '#8d6e63'];
   const HAIRS = ['#3b2a20', '#6b4a2f', '#2b2b2b', '#a8a8a8', '#c98d4b'];
   const PANTS = ['#3c4a63', '#5b4636', '#2f3640', '#6d6d7a'];
   const CAR_COLORS = ['#e74c3c', '#3498db', '#f1c40f', '#ecf0f1', '#2ecc71', '#9b59b6', '#34495e', '#e67e22'];
   const GROCERIES = ['apple', 'milk', 'bread', 'carrot', 'egg'];
+  const BUS_COLORS = ['#2f9e6e', '#e8eef2', '#3d6fa8'];
 
   const G = {
     state: 'menu',
@@ -146,7 +179,7 @@
     if (!extra || !extra.vz) {
       for (const r of G.ramps) if (z > r.z0 - 4 && z < r.z1 + 6 && Math.abs(r.x - x) < d.w + r.w + 0.3) return null;
     }
-    const o = Object.assign({ kind, x, z, w: d.w, len: d.len, h: d.h, seed: G.rng(), hit: false, wob: 0, kx: 0 }, extra || {});
+    const o = Object.assign({ kind, x, z, w: d.w, len: d.len, h: d.h, y0: d.y0 || 0, seed: G.rng(), hit: false, wob: 0, kx: 0 }, extra || {});
     G.obstacles.push(o);
     return o;
   }
@@ -232,7 +265,23 @@
       change = { to, dist: 75 + rng() * 90, blinker: lc.blinker, signal: lc.blinker ? 1.0 : 0, moveTime: lc.blinker ? 0.9 : 0.7 };
     }
     const jitter = change ? 0 : (rng() - 0.5) * 0.4;
-    return addOb(kind, laneX + jitter, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz, change, lcState: change ? 'wait' : null });
+    const color = kind === 'bus' ? BUS_COLORS[Math.floor(rng() * BUS_COLORS.length)] : CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)];
+    const o = addOb(kind, laneX + jitter, z, { color, vz, change, lcState: change ? 'wait' : null });
+    // トラック・バスの後ろにジャンプ台（屋根まで駆け上がって大ジャンプ）
+    if (o && (kind === 'truck' || kind === 'bus') && rng() < 0.45) {
+      const TR = JUMP.truckRamp;
+      G.ramps.push({ kind: 'ramp', attach: o, x: o.x, w: TR.w, len: TR.len, h: o.h, z0: 0, z1: 0, z: 0, used: false });
+      syncAttachedRamp(G.ramps[G.ramps.length - 1]);
+    }
+    return o;
+  }
+  function syncAttachedRamp(r) {
+    const a = r.attach;
+    r.prevZ0 = r.z0;
+    r.x = a.x;
+    r.z1 = a.z - a.len / 2;
+    r.z0 = r.z1 - r.len;
+    r.z = (r.z0 + r.z1) / 2;
   }
 
   // 1列ぶんの障害物を置き、次の列までの間隔を返す。
@@ -251,13 +300,13 @@
       const n = 1 + (rng() < 0.25 + diff * 0.35 ? 1 : 0) + (diff > 0.6 && rng() < 0.2 ? 1 : 0);
       for (let k = 0; k < n; k++) {
         const x = lanes[k] + (rng() - 0.5) * 0.3;
-        const kind = pickWeighted(rng, { shopper: 36, cart: 18, display: 14, boxes: 16, wetsign: 16 });
+        const kind = pickWeighted(rng, { shopper: 34, cart: 16, display: 13, boxes: 15, wetsign: 14, banner: diff > 0.15 ? 8 : 0 });
         const oz = z + rng() * 2;
         if (kind === 'shopper') {
           const moving = rng() < 0.2 + diff * 0.25;
           addOb('shopper', x, oz, Object.assign(person(rng), { basket: rng() < 0.6, vx: moving ? (rng() < 0.5 ? -1 : 1) * (0.6 + rng() * 0.7) : 0, bounce: 2.5 }));
-        } else if (kind === 'display' || kind === 'boxes') {
-          addOb(kind, clamp(x, -2.2, 2.2), oz);
+        } else if (kind === 'display' || kind === 'boxes' || kind === 'banner') {
+          addOb(kind, clamp(x, -2.0, 2.0), oz);
         } else addOb(kind, x, oz);
       }
       const free = lanes[n] !== undefined ? lanes[n] : 0;
@@ -266,45 +315,47 @@
       return th.maxSpeed * (lerp(1.0, 0.7, diff) + rng() * 0.2);
     }
 
-    if (zone.type === 'street') {
-      const lanes = shuffle(rng, [-2.4, -0.8, 0.8, 2.4]);
-      const n = 1 + (rng() < 0.35 + diff * 0.4 ? 1 : 0);
+    if (zone.type === 'shotengai') {
+      // 商店街: 歩行者・自転車・立て看板・のれん
+      const lanes = shuffle(rng, [-2.0, -1.0, 0, 1.0, 2.0]);
+      const n = 1 + (rng() < 0.3 + diff * 0.4 ? 1 : 0);
       for (let k = 0; k < n; k++) {
-        const kind = pickWeighted(rng, { car: 34, bike: 12, cone: 18, barrier: 16, cat: 10, shopper: 10 });
         const x = lanes[k];
-        if (kind === 'car') addVehicle('car', x < 0 ? -1.75 : 1.75, z, th, 25 + rng() * 15);
-        else if (kind === 'bike') addOb('bike', x < 0 ? -2.6 : 2.6, z, Object.assign(person(rng), { vz: 12 + rng() * 5 }));
-        else if (kind === 'barrier') addOb('barrier', clamp(x, -2.4, 2.4), z);
+        const kind = pickWeighted(rng, { shopper: 30, bike: 14, kanban: 16, noren: 10, boxes: 10, cart: 6, cat: 6 });
+        if (kind === 'shopper') {
+          const moving = rng() < 0.25 + diff * 0.3;
+          addOb('shopper', x, z, Object.assign(person(rng), { basket: rng() < 0.5, vx: moving ? (rng() < 0.5 ? -1 : 1) * (0.7 + rng() * 0.8) : 0, bounce: 2.4 }));
+        } else if (kind === 'bike') addOb('bike', x, z, Object.assign(person(rng), { vz: 6 + rng() * 5 }));
+        else if (kind === 'noren') addOb('noren', clamp(x, -1.6, 1.6), z);
         else if (kind === 'cat') {
           const from = rng() < 0.5 ? -1 : 1;
-          addOb('cat', from * (th.roadW + 0.8), z, { vx: -from * (2.4 + rng() * 0.8), trigger: 140, active: false });
-        } else if (kind === 'shopper') addOb('shopper', x, z, Object.assign(person(rng), { basket: false, vx: 0 }));
-        else {
-          addOb('cone', x - 0.35, z);
-          addOb('cone', x + 0.35, z + 0.6);
-        }
+          addOb('cat', from * (th.roadW + 0.5), z, { vx: -from * (2.4 + rng() * 0.8), trigger: 120, active: false });
+        } else addOb(kind, clamp(x, -2.0, 2.0), z);
       }
       const free = lanes[n] !== undefined ? lanes[n] : 0;
       if (rng() < rampChance) addRamp(free, z - th.maxSpeed * 0.35, th);
-      else if (rng() < 0.55) addItems(free, z + 5, 1 + Math.floor(rng() * 3), 'coin');
+      else if (rng() < 0.55) addItems(free, z + 5, 1 + Math.floor(rng() * 3));
       return th.maxSpeed * gapSec;
     }
 
-    // highway
-    const lanes = shuffle(rng, [-3.33, 0, 3.33]);
+    // 大通り・橋・首都高: 車線ごとに車・バス・トラック、工事
+    const lanes = shuffle(rng, th.lanes.slice());
     const n = 1 + (rng() < 0.4 + diff * 0.35 ? 1 : 0);
+    const fast = zone.type === 'expressway';
     for (let k = 0; k < n; k++) {
       const x = lanes[k];
-      const kind = pickWeighted(rng, { car: 50, truck: 25, cone: 25 });
-      if (kind === 'car') addVehicle('car', x, z, th, 50 + rng() * 20);
-      else if (kind === 'truck') addVehicle('truck', x, z, th, 45 + rng() * 10);
-      else {
+      const table = fast ? { car: 46, truck: 24, bus: 8, cone: 22 } : { car: 38, bus: 14, truck: 14, cone: 12, barrier: 8, bar: 8, kanban: 6 };
+      const kind = pickWeighted(rng, table);
+      if (kind === 'car') addVehicle('car', x, z, th, fast ? 60 + rng() * 20 : 45 + rng() * 20);
+      else if (kind === 'truck') addVehicle('truck', x, z, th, fast ? 55 + rng() * 10 : 40 + rng() * 15);
+      else if (kind === 'bus') addVehicle('bus', x, z, th, fast ? 50 + rng() * 10 : 35 + rng() * 10);
+      else if (kind === 'cone') {
         const dir = rng() < 0.5 ? -1 : 1;
         for (let c = 0; c < 4; c++) addOb('cone', x - dir * 1.1 + dir * c * 0.7, z + c * 3.5);
-      }
+      } else addOb(kind, x, z);
     }
     const free = lanes[n] !== undefined ? lanes[n] : 0;
-    if (rng() < rampChance + 0.05) addRamp(free, z - th.maxSpeed * 0.35, th);
+    if (rng() < rampChance) addRamp(free, z - th.maxSpeed * 0.35, th);
     else if (rng() < 0.55) addItems(free, z + 6, 2 + Math.floor(rng() * 3), 'coin');
     return th.maxSpeed * gapSec;
   }
@@ -319,7 +370,7 @@
   }
 
   // ---------- 画面とHUD ----------
-  const SCREENS = ['title', 'stage', 'howto', 'pause', 'result'];
+  const SCREENS = ['title', 'stage', 'howto', 'pause', 'result', 'settings', 'share'];
   function showScreen(name) {
     for (const s of SCREENS) $('screen-' + s).classList.toggle('hidden', s !== name);
   }
@@ -402,6 +453,17 @@
     const pct = clamp(P.z / G.stage.length, 0, 1) * 100;
     $('progress-fill').style.width = pct + '%';
     $('progress-cart').style.left = pct + '%';
+    // セールゲージと発動ボタン
+    $('gauge-fill').style.width = G.gauge + '%';
+    $('gauge').classList.toggle('full', G.gauge >= 100 && G.sale <= 0);
+    $('gauge').classList.toggle('active', G.sale > 0);
+    $('btn-sale').classList.toggle('hidden', !(G.gauge >= 100 && G.sale <= 0 && G.state === 'run') || settings.saleAuto);
+    $('app').classList.toggle('sale', G.sale > 0);
+    // 次のチェックポイント
+    const st = G.stage;
+    const next = G.cpIndex < st.checkpoints.length ? st.cpNames[G.cpIndex] : st.goalLabel;
+    const dist = Math.max(0, (G.cpIndex < st.checkpoints.length ? st.checkpoints[G.cpIndex] : st.length) - P.z);
+    setText('next-cp', `次は ${next}  ${dist >= 1000 ? (dist / 1000).toFixed(1) + 'km' : Math.round(dist) + 'm'}`);
   }
 
   // ---------- 進行 ----------
@@ -417,7 +479,7 @@
   window.addEventListener('resize', resize);
 
   function resetPlayer() {
-    G.player = { x: 0, tx: 0, z: 0, prevZ: 0, y: 0, vy: 0, speed: 0, vx: 0, steer: 0, phase: 0, onRamp: null, trick: null, rampFromAir: false };
+    G.player = { x: 0, tx: 0, z: 0, prevZ: 0, y: 0, vy: 0, speed: 0, vx: 0, steer: 0, phase: 0, onRamp: null, onObj: null, trick: null, tumble: null, rampFromAir: false, slide: 0, jumpBuf: 0, slideBuf: 0 };
     G.camX = 0;
   }
 
@@ -430,6 +492,10 @@
     G.ramps = [];
     G.boost = 0;
     G.boostLevel = 0;
+    G.gauge = 0;
+    G.sale = 0;
+    G.slow = 0;
+    G.night = false;
     G.particles = [];
     G.floaters = [];
     G.cpIndex = 0;
@@ -461,6 +527,13 @@
       combo: 0,
       comboTimer: 0,
       nearMisses: 0,
+      gauge: 0,
+      gaugeFull: false,
+      sale: 0,
+      sales: 0,
+      smashed: 0,
+      slow: 0,
+      night: !!settings.night,
       timeLeft: 0,
       elapsed: 0,
       penalty: 0,
@@ -528,6 +601,10 @@
     P.speed *= 0.1;
     P.trick = null;
     P.onRamp = null;
+    P.onObj = null;
+    P.slide = 0;
+    P.tumble = { t: 0, dur: 0.7 };
+    G.slow = 0.45; // 一瞬スローになる
     G.boost = 0;
     G.boostLevel = 0;
     G.combo = 0;
@@ -567,6 +644,7 @@
     const type = G.chain === 1 ? TRICKS[Math.floor(Math.random() * TRICKS.length)] : G.chain === 2 ? 'cork' : 'flip';
     P.trick = { type, t: 0, dur: airTime(P.vy) * 0.92, turns: G.chain >= 3 ? 2 : 1, dir: Math.random() < 0.5 ? -1 : 1 };
     sfx.jump(G.chain);
+    if (r.attach) addGauge(SALE.gain.truckRamp);
     haptics.vibrate(chained ? [20, 30, 40] : 35);
     pulse('speed-chip');
   }
@@ -577,8 +655,9 @@
     const zc = P.z + 0.6; // カートの中心
     if (P.onRamp) {
       const r = P.onRamp;
-      if (Math.abs(P.x - r.x) > r.w) {
-        P.onRamp = null; // 横から落ちた
+      if (Math.abs(P.x - r.x) > r.w || zc < r.z0) {
+        P.onRamp = null; // 横から落ちた / 動く台に追い越された
+        P.y = Math.max(0, P.y);
       } else if (zc >= r.z1) {
         launch(r, th);
       } else {
@@ -591,7 +670,10 @@
       if (r.used || Math.abs(P.x - r.x) > r.w - 0.05 || zc < r.z0 || zc >= r.z1) continue;
       const surf = (r.h * (zc - r.z0)) / r.len;
       // 坂の表面に触れたときだけ乗る（高く飛んでいる最中に真上を通過しても反応しない）
-      if (P.y <= surf + 0.08 && prevY >= surf - 0.5) {
+      //   高速だと1フレームで坂の途中まで進むので、「前のフレームで坂のふもとより手前にいた」なら地面から乗ったとみなす
+      const prevZc = P.prevZ + 0.6;
+      const footEntry = P.y <= 0.05 && prevZc <= (r.prevZ0 !== undefined ? r.prevZ0 : r.z0) + 1.5;
+      if (P.y <= surf + 0.08 && (prevY >= surf - 0.5 || footEntry)) {
         P.rampFromAir = prevY > 0.05;
         P.onRamp = r;
         P.trick = null;
@@ -617,10 +699,89 @@
     if (P.trick) {
       // 技を決めて着地
       G.score += 100 * Math.max(1, chain);
+      addGauge(SALE.gain.trick * Math.max(1, chain) * (P.trick.turns || 1));
       pulse('score-chip');
       burst(['#ffffff', '#ffd166', '#2ec4b6'], 12);
       P.trick = null;
     }
+  }
+
+  // ---------- セールゲージ / タイムセール ----------
+  function addGauge(n) {
+    if (G.sale > 0 || G.state !== 'run') return;
+    G.gauge = Math.min(100, G.gauge + n);
+    if (G.gauge >= 100 && !G.gaugeFull) {
+      G.gaugeFull = true;
+      sfx.full();
+      haptics.vibrate([20, 40, 20]);
+      if (settings.saleAuto) activateSale();
+    }
+  }
+  function activateSale() {
+    if (G.state !== 'run' || G.gauge < 100 || G.sale > 0) return;
+    G.sale = SALE.duration;
+    G.sales++;
+    G.gaugeFull = false;
+    G.player.speed = Math.max(G.player.speed, THEMES[zoneAt(G.stage, G.player.z).type].maxSpeed * 1.2);
+    sfx.sale();
+    haptics.vibrate([30, 30, 60]);
+    burst(['#ffd166', '#ff8c1a', '#ffffff', '#ef476f'], 30);
+  }
+
+  // 物をはね飛ばす（軽い物、またはタイムセール中は何でも）
+  function smash(o) {
+    const P = G.player;
+    o.hit = true;
+    o.flying = true;
+    o.vz = 0;
+    o.change = null;
+    o.blinkDir = 0;
+    const side = o.x >= P.x ? 1 : -1;
+    const heavy = VEHICLES.has(o.kind);
+    o.fvx = side * (3 + Math.random() * 5);
+    o.fvy = (heavy ? 7 : 9) + Math.random() * 6;
+    o.fvz = P.speed * (heavy ? 0.5 : 0.75);
+    o.fy = 0;
+    o.flyT = 0;
+    o.rx = 0;
+    o.ry = 0;
+    o.rz = 0;
+    o.srx = (Math.random() - 0.5) * 14;
+    o.sry = (Math.random() - 0.5) * 10;
+    o.srz = side * (4 + Math.random() * 8);
+    G.smashed++;
+    G.score += heavy ? 150 : 40;
+    sfx.smash();
+    haptics.vibrate(heavy ? 40 : 12);
+    G.shake = Math.max(G.shake, heavy ? 0.25 : 0.1);
+    pulse('score-chip');
+  }
+
+  function grounded() {
+    const P = G.player;
+    return (P.y <= 0.001 && !P.onRamp) || !!P.onObj || !!P.onRamp;
+  }
+  function doJump() {
+    const P = G.player;
+    P.vy = MOVE.hopVy;
+    P.y = Math.max(P.y, 0.001);
+    P.onObj = null;
+    P.onRamp = null;
+    P.slide = 0;
+    P.jumpBuf = 0;
+    sfx.hop();
+  }
+  function doSlide() {
+    const P = G.player;
+    P.slide = MOVE.slideTime;
+    P.slideBuf = 0;
+    sfx.slide();
+  }
+  // 車の屋根に乗っている間、まだ屋根の上にいるか
+  function onRoof(o) {
+    const P = G.player;
+    const zc = P.z + 0.6;
+    return !o.flying && zc <= o.z + o.len / 2 + 0.3 && zc >= o.z - o.len / 2 - 0.5 && Math.abs(o.x - P.x) < o.w + 0.3;
   }
 
   function pulse(id) {
@@ -637,6 +798,7 @@
     const pts = 50 * G.combo;
     G.score += pts;
     sfx.nearMiss(G.combo);
+    addGauge(SALE.gain.nearMiss);
     haptics.vibrate(15);
     pulse('score-chip');
   }
@@ -657,11 +819,11 @@
         renderHearts();
         sub += ' ♥+1';
       }
-      banner('CHECKPOINT', 'cp', sub);
+      banner(G.stage.cpNames[i] || 'CHECKPOINT', 'cp', sub);
     } else {
       const lap = G.elapsed + G.penalty;
       G.laps.push(lap);
-      banner('CHECKPOINT', 'cp', formatTime(lap));
+      banner(G.stage.cpNames[i] || 'CHECKPOINT', 'cp', formatTime(lap));
     }
   }
 
@@ -671,6 +833,7 @@
     G.player.onRamp = null;
     G.boost = 0;
     sfx.goal();
+    Render.requestSnapshot();
     haptics.vibrate([40, 60, 40, 60, 80]);
     burst(['#ff8c42', '#ffd166', '#2ec4b6', '#ef476f', '#ffffff'], 50);
     banner('GOAL!', 'goal', G.stage.goalLabel + 'に到着！');
@@ -683,6 +846,7 @@
     G.player.onRamp = null;
     G.boost = 0;
     sfx.over();
+    Render.requestSnapshot();
     haptics.vibrate(300);
     banner(reason === 'time' ? 'TIME UP' : 'GAME OVER', 'over');
   }
@@ -727,7 +891,26 @@
     }
 
     const dragPx = input.consumeDragX();
+    const swipes = input.consumeSwipes();
     if (G.state === 'run') {
+      // 上スワイプ（↑ / スペース）でジャンプ、下スワイプ（↓）でスライディング。空中で下なら急降下
+      if (swipes.includes('up') || input.wasPressed('ArrowUp', 'KeyW', 'Space')) P.jumpBuf = 0.15;
+      if (swipes.includes('down') || input.wasPressed('ArrowDown', 'KeyS')) {
+        if (grounded() && !P.onRamp) doSlide();
+        else {
+          P.vy = Math.min(P.vy, MOVE.dropVy);
+          P.trick = null;
+          P.slideBuf = 0.25;
+        }
+      }
+      if (input.wasPressed('KeyE', 'Enter', 'ShiftLeft', 'ShiftRight')) activateSale();
+      if (P.jumpBuf > 0) {
+        if (grounded()) doJump();
+        P.jumpBuf -= dt;
+      }
+      P.slide = Math.max(0, P.slide - dt);
+      P.slideBuf = Math.max(0, P.slideBuf - dt);
+
       // 指でなぞった分だけ目標位置を動かす（画面上の指の動き ≒ カートの動き）
       P.tx += (dragPx * CONTROL.dragSensitivity) / Render.view.k;
       P.tx += input.axisX() * th.steer * dt; // PC確認用のキーボード
@@ -737,8 +920,9 @@
       P.x += clamp((P.tx - P.x) * Math.min(1, dt * 28), -maxStep, maxStep);
       P.vx = (P.x - prevX) / Math.max(dt, 1e-4);
 
-      const top = G.boost > 0 ? th.maxSpeed * JUMP.levels[G.boostLevel - 1] : th.maxSpeed;
-      if (P.speed < top) P.speed = Math.min(top, P.speed + (G.boost > 0 ? th.accel * 3 : th.accel) * dt);
+      const mul = Math.max(G.boost > 0 ? JUMP.levels[G.boostLevel - 1] : 1, G.sale > 0 ? SALE.speedMul : 1);
+      const top = th.maxSpeed * mul;
+      if (P.speed < top) P.speed = Math.min(top, P.speed + (mul > 1 ? th.accel * 3 : th.accel) * dt);
       else P.speed = Math.max(top, P.speed - 14 * dt);
     } else if (G.state === 'goal' || G.state === 'over') {
       P.speed = Math.max(0, P.speed - 10 * dt);
@@ -746,9 +930,14 @@
       P.x += P.vx * dt;
     }
     P.prevZ = P.z;
-    // ジャンプ（空中）
+    // ジャンプ（空中）・車の屋根
     const prevY = P.y;
-    if (!P.onRamp && (P.y > 0 || P.vy > 0)) {
+    if (P.onObj) {
+      if (onRoof(P.onObj)) {
+        P.y = P.onObj.h;
+        P.vy = 0;
+      } else P.onObj = null; // 屋根の前から落ちた
+    } else if (!P.onRamp && (P.y > 0 || P.vy > 0)) {
       P.vy -= JUMP.gravity * dt;
       P.y += P.vy * dt;
       if (P.trick) P.trick.t += dt;
@@ -756,10 +945,36 @@
         P.y = 0;
         P.vy = 0;
         landed();
+        if (P.slideBuf > 0) doSlide();
       }
     }
+    if (P.tumble) {
+      P.tumble.t += dt;
+      if (P.tumble.t >= P.tumble.dur) P.tumble = null;
+    }
     P.z += P.speed * dt;
+    for (const r of G.ramps) if (r.attach) syncAttachedRamp(r);
     if (G.state === 'run') updateRamps(th, prevY);
+    // 落ちてきて車の屋根に乗ったら、ポンと弾んで次へ（車から車へ渡っていける）
+    if (G.state === 'run' && !P.onRamp && P.vy <= 0 && P.y > 0) {
+      for (const o of G.obstacles) {
+        if (!VEHICLES.has(o.kind) || o.flying) continue;
+        if (prevY >= o.h - 0.4 && P.y <= o.h + 0.6 && onRoof(o)) {
+          landed();
+          P.y = o.h + 0.01;
+          P.vy = MOVE.hopVy * 0.75;
+          G.roofHops = (G.roofHops || 0) + 1;
+          G.score += 80;
+          addGauge(SALE.gain.smash * 0.5);
+          sfx.hop();
+          break;
+        }
+      }
+    }
+    if (G.sale > 0) {
+      G.sale = Math.max(0, G.sale - dt);
+      G.gauge = (100 * G.sale) / SALE.duration;
+    }
     if (P.y <= 0) P.phase += Math.min(P.speed, 20) * dt * 1.3;
     P.steer += (clamp(P.vx / 10, -1, 1) - P.steer) * Math.min(1, dt * 10);
     G.boost = Math.max(0, G.boost - dt);
@@ -784,29 +999,54 @@
           }
         }
       }
-      if (o.hit) {
+      if (o.flying) {
+        o.flyT += dt;
+        o.x += o.fvx * dt;
+        o.z += o.fvz * dt;
+        o.fy += o.fvy * dt;
+        o.fvy -= 26 * dt;
+        o.rx += o.srx * dt;
+        o.ry += o.sry * dt;
+        o.rz += o.srz * dt;
+      } else if (o.hit) {
         o.wob += dt;
         o.x += o.kx * dt;
         o.kx *= Math.pow(0.05, dt);
       }
     }
-    G.obstacles = G.obstacles.filter((o) => o.z + o.len > P.z - CAM_BACK - 2 && Math.abs(o.x) < 12);
+    G.obstacles = G.obstacles.filter((o) => o.z + o.len > P.z - CAM_BACK - 2 && Math.abs(o.x) < 30 && !(o.flying && (o.flyT > 2.5 || o.fy < -8)));
+    if (P.onObj && !G.obstacles.includes(P.onObj)) P.onObj = null;
     G.items = G.items.filter((it) => !it.taken && it.z > P.z - CAM_BACK - 2);
-    G.ramps = G.ramps.filter((r) => r.z1 > P.z - CAM_BACK - 2 || r === P.onRamp);
+    G.ramps = G.ramps.filter((r) => (r.z1 > P.z - CAM_BACK - 2 || r === P.onRamp) && !(r.attach && (r.attach.flying || !G.obstacles.includes(r.attach))));
+    if (P.onRamp && !G.ramps.includes(P.onRamp)) P.onRamp = null;
 
     if (G.state === 'run') {
       // 高速でもすり抜けないよう、前フレームから今フレームまでの区間で判定する
       const cz = P.z + 0.6;
       const pz = P.prevZ + 0.6;
+      const ph = P.slide > 0 ? MOVE.slideH : MOVE.standH; // 自分の高さ（スライディング中は低い）
       for (const o of G.obstacles) {
-        if (o.hit) continue;
+        if (o.hit || o.flying || o === P.onObj) continue;
+        if (P.onRamp && P.onRamp.attach === o) continue;
         const reach = o.len / 2 + 0.75;
         const inZ = o.z + reach >= pz && o.z - reach <= cz;
         const clearance = Math.abs(o.x - P.x) - (o.w + 0.38);
-        const over = P.y > o.h - 0.15; // 飛び越えている
+        // 上下の重なり: 飛び越えている／下をくぐっている なら当たらない
+        const overlapY = P.y < o.h - 0.12 && P.y + ph > o.y0 + 0.05;
         if (inZ) {
-          if (over) continue;
-          if (clearance < 0 && G.invuln <= 0) {
+          if (!overlapY) continue;
+          if (clearance < 0) {
+            if (G.sale > 0) {
+              smash(o);
+              continue;
+            }
+            if (LIGHT.has(o.kind)) {
+              smash(o);
+              P.speed *= 0.93;
+              addGauge(SALE.gain.smash);
+              continue;
+            }
+            if (G.invuln > 0) continue;
             onHit(o);
             break;
           }
@@ -822,6 +1062,7 @@
           it.taken = true;
           G.itemsTaken++;
           G.score += 100;
+          addGauge(SALE.gain.item);
           sfx.item();
           pulse('score-chip');
         }
@@ -931,7 +1172,8 @@
     G.state = 'done';
     setHud(false);
     const st = G.stage;
-    const rec = records[st.id] || (records[st.id] = {});
+    const rkey = st.id + (G.night ? '@night' : '');
+    const rec = records[rkey] || (records[rkey] = {});
     let newRecord = false;
     let rows = [];
     let headline = '';
@@ -986,7 +1228,10 @@
     rows = [
       ['ギリギリ回避', `${G.nearMisses}回`],
       ['ジャンプ台', `${G.jumps}回（最大${G.maxChain}連続）`],
+      ['はね飛ばした数', `${G.smashed}個`],
+      ['タイムセール', `${G.sales}回`],
     ].concat(rows);
+    G.result = { clear, headline, sub, rows: rows.slice(), newRecord };
     storage.set(REC_KEY, records);
 
     $('result-head').textContent = headline;
@@ -1001,14 +1246,122 @@
     showScreen('result');
   }
 
+  // ---------- 結果画像のシェア ----------
+  function loadImage(src) {
+    return new Promise((res) => {
+      if (!src) return res(null);
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = () => res(null);
+      im.src = src;
+    });
+  }
+  async function makeResultImage() {
+    const r = G.result;
+    const st = G.stage;
+    const Wc = 1080;
+    const Hc = 1440;
+    const c = document.createElement('canvas');
+    c.width = Wc;
+    c.height = Hc;
+    const g = c.getContext('2d');
+    const font = (w, px) => `${w} ${px}px "M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif`;
+    g.fillStyle = '#fffaf0';
+    g.fillRect(0, 0, Wc, Hc);
+    // ゴールの瞬間の画面
+    const shot = await loadImage(Render.getSnapshot());
+    const ph = 760;
+    if (shot) {
+      const k = Math.max(Wc / shot.width, ph / shot.height);
+      const sw = Wc / k;
+      const sh = ph / k;
+      g.drawImage(shot, (shot.width - sw) / 2, (shot.height - sh) / 2, sw, sh, 0, 0, Wc, ph);
+    } else {
+      g.fillStyle = '#2ec4b6';
+      g.fillRect(0, 0, Wc, ph);
+    }
+    const grd = g.createLinearGradient(0, ph - 220, 0, ph);
+    grd.addColorStop(0, 'rgba(0,0,0,0)');
+    grd.addColorStop(1, 'rgba(0,0,0,0.55)');
+    g.fillStyle = grd;
+    g.fillRect(0, ph - 220, Wc, 220);
+    g.textAlign = 'left';
+    g.fillStyle = '#ffffff';
+    g.font = font(900, 46);
+    g.fillText('カートラッシュ！', 48, 90);
+    g.font = font(900, 100);
+    g.lineWidth = 12;
+    g.strokeStyle = '#2b2d42';
+    g.strokeText(r.headline, 48, ph - 60);
+    g.fillStyle = r.clear ? '#ffd166' : '#ffffff';
+    g.fillText(r.headline, 48, ph - 60);
+    // ステージと数字
+    g.fillStyle = '#2b2d42';
+    g.font = font(900, 52);
+    g.fillText(`STAGE ${st.no}  ${st.name}${G.night ? '（夜）' : ''}`, 48, ph + 90);
+    g.font = font(800, 34);
+    g.fillStyle = '#5c5f77';
+    g.fillText(`${st.route || ''}  ${G.mode === 'normal' ? 'チェックポイントモード' : 'タイムアタック'}`, 48, ph + 145);
+    let y = ph + 220;
+    const rows = r.rows.filter((row) => row[2] === 'total').concat(r.rows.filter((row) => row[2] !== 'total').slice(0, 5));
+    rows.forEach((row, i) => {
+      g.font = font(i === 0 ? 900 : 700, i === 0 ? 50 : 36);
+      g.fillStyle = i === 0 ? '#d94b4b' : '#2b2d42';
+      g.textAlign = 'left';
+      g.fillText(row[0], 48, y);
+      g.textAlign = 'right';
+      g.fillText(String(row[1]), Wc - 48, y);
+      y += i === 0 ? 78 : 58;
+    });
+    if (r.newRecord) {
+      g.save();
+      g.translate(Wc - 210, 150);
+      g.rotate(-0.12);
+      g.fillStyle = '#ffd166';
+      g.fillRect(-170, -48, 340, 96);
+      g.strokeStyle = '#2b2d42';
+      g.lineWidth = 8;
+      g.strokeRect(-170, -48, 340, 96);
+      g.fillStyle = '#2b2d42';
+      g.textAlign = 'center';
+      g.font = font(900, 46);
+      g.fillText('NEW RECORD!', 0, 16);
+      g.restore();
+    }
+    return c;
+  }
+  let shareBlob = null;
+  async function openShare() {
+    sfx.click();
+    const c = await makeResultImage();
+    const url = c.toDataURL('image/png');
+    $('share-img').src = url;
+    $('btn-share-dl').href = url;
+    shareBlob = await new Promise((res) => c.toBlob(res, 'image/png'));
+    const canShareFile = !!(navigator.canShare && shareBlob && navigator.canShare({ files: [new File([shareBlob], 'cart-rush.png', { type: 'image/png' })] }));
+    $('btn-share-send').classList.toggle('hidden', !canShareFile);
+    showScreen('share');
+  }
+  async function sendShare() {
+    if (!shareBlob) return;
+    const file = new File([shareBlob], 'cart-rush.png', { type: 'image/png' });
+    try {
+      await navigator.share({ files: [file], text: `カートラッシュ！ STAGE ${G.stage.no} ${G.result.headline}` });
+    } catch (e) {
+      /* キャンセルなど */
+    }
+  }
+
   // ---------- メニュー ----------
   let selectedMode = 'normal';
   function renderStageList() {
     const list = $('stage-list');
+    $('time-day').classList.toggle('on', !settings.night);
+    $('time-night').classList.toggle('on', settings.night);
     $('stage-mode').textContent = selectedMode === 'normal' ? 'チェックポイントモード' : 'タイムアタック';
     list.innerHTML = '';
     STAGES.forEach((st, idx) => {
-      const rec = records[st.id] || {};
+      const rec = records[st.id + (settings.night ? '@night' : '')] || {};
       const best =
         selectedMode === 'normal'
           ? rec.bestScore
@@ -1020,10 +1373,10 @@
       const btn = document.createElement('button');
       btn.className = 'stage-card stage-' + st.id;
       btn.innerHTML = `
-        <div class="stage-thumb"><span>STAGE ${st.no}</span></div>
+        <div class="stage-thumb${settings.night ? ' night' : ''}"><span>STAGE ${st.no}</span></div>
         <div class="stage-info">
           <h3>${st.name}${rec.cleared ? ' <em class="tag">クリア</em>' : ''}</h3>
-          <p class="stars">難しさ ${'★'.repeat(st.level)}${'☆'.repeat(3 - st.level)}</p>
+          <p class="stars">難しさ ${'★'.repeat(st.level)}${'☆'.repeat(3 - st.level)}${st.route ? `<span class="route">${st.route}</span>` : ''}</p>
           <p>${st.desc}</p>
           <p class="best">${best}</p>
         </div>`;
@@ -1045,6 +1398,18 @@
     if (G.state !== 'paused') return;
     G.state = G.prevState;
     showScreen(null);
+  }
+
+  function saveSettings() {
+    storage.set(SET_KEY, settings);
+    Render.setCameraMode(settings.camera);
+    document.querySelectorAll('[data-set]').forEach((b) => b.classList.toggle('on', String(settings[b.dataset.set]) === b.dataset.val));
+  }
+  let settingsBack = 'title';
+  function openSettings(from) {
+    settingsBack = from;
+    saveSettings();
+    showScreen('settings');
   }
 
   function updateSoundButton() {
@@ -1081,6 +1446,36 @@
     updateSoundButton();
   });
   $('btn-pause').addEventListener('click', pause);
+  $('btn-share').addEventListener('click', openShare);
+  $('btn-share-send').addEventListener('click', sendShare);
+  $('btn-share-close').addEventListener('click', () => showScreen('result'));
+  $('btn-sale').addEventListener('click', activateSale);
+  document.querySelectorAll('[data-set]').forEach((b) =>
+    b.addEventListener('click', () => {
+      sfx.click();
+      const v = b.dataset.val;
+      settings[b.dataset.set] = v === 'true' ? true : v === 'false' ? false : v;
+      saveSettings();
+    })
+  );
+  $('btn-settings').addEventListener('click', () => {
+    audio.unlock();
+    sfx.click();
+    openSettings('title');
+  });
+  $('btn-pause-settings').addEventListener('click', () => openSettings('pause'));
+  $('btn-settings-back').addEventListener('click', () => {
+    sfx.click();
+    showScreen(settingsBack);
+  });
+  for (const [id, night] of [['time-day', false], ['time-night', true]]) {
+    $(id).addEventListener('click', () => {
+      sfx.click();
+      settings.night = night;
+      storage.set(SET_KEY, settings);
+      renderStageList();
+    });
+  }
   $('btn-resume').addEventListener('click', resume);
   $('btn-restart').addEventListener('click', () => startStage(G.stageIdx, G.mode));
   $('btn-quit').addEventListener('click', goMenu);
@@ -1107,7 +1502,13 @@
       if (G.state === 'paused') resume();
       else pause();
     }
-    update(dt);
+    // ぶつかった瞬間は一瞬スローモーション
+    let gdt = dt;
+    if (G.slow > 0 && G.state === 'run') {
+      G.slow = Math.max(0, G.slow - dt);
+      gdt = dt * 0.3;
+    }
+    update(gdt);
 
     Render.setShake(G.shake);
     Render.drawWorld(G, G.time);

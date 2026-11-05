@@ -185,7 +185,12 @@
         if (dash) g.fillRect(x - 4, 0, 8, h / 2);
         else g.fillRect(x - 4, 0, 8, h);
       };
-      if (kind === 'highway') {
+      if (kind === 'avenue') {
+        line(w * 0.03, '#f2f2f2');
+        line(w * 0.97, '#f2f2f2');
+        line(w / 3, '#ffffff', true);
+        line((w * 2) / 3, '#ffffff', true);
+      } else if (kind === 'highway') {
         line(w * 0.03, '#f7d354');
         line(w * 0.97, '#f2f2f2');
         line(w / 3, '#ffffff', true);
@@ -531,15 +536,19 @@
     limb(g, new T.Vector3(-0.42, 1.0, -0.5), new T.Vector3(-0.44, 1.06, -0.44), 0.02, frame);
     limb(g, new T.Vector3(0.42, 1.0, -0.5), new T.Vector3(0.44, 1.06, -0.44), 0.02, frame);
     if (withGoods) {
-      const bread = ball(g, 0.11, -0.2, 1.02, -1.0, '#e0a85a', 1, 1, 2.6);
+      const goods = new T.Group();
+      g.add(goods);
+      g.userData.goods = goods;
+      const gg = goods;
+      const bread = ball(gg, 0.11, -0.2, 1.02, -1.0, '#e0a85a', 1, 1, 2.6);
       bread.rotation.x = 0.5;
-      cyl(g, 0.035, 0.6, 0.05, 1.08, -1.2, '#4caf50').rotation.x = -0.35;
-      cyl(g, 0.036, 0.25, 0.05, 0.82, -1.08, '#f4f7ee').rotation.x = -0.35;
-      box(g, 0.16, 0.26, 0.16, 0.22, 0.95, -0.8, '#ffffff');
-      box(g, 0.165, 0.07, 0.165, 0.22, 0.95, -0.8, '#4a90d9');
-      ball(g, 0.1, -0.1, 1.02, -0.68, '#e74c3c');
-      ball(g, 0.1, 0.12, 1.0, -1.32, '#ff9f43');
-      box(g, 0.3, 0.12, 0.22, -0.16, 0.92, -1.3, '#f2c94c');
+      cyl(gg, 0.035, 0.6, 0.05, 1.08, -1.2, '#4caf50').rotation.x = -0.35;
+      cyl(gg, 0.036, 0.25, 0.05, 0.82, -1.08, '#f4f7ee').rotation.x = -0.35;
+      box(gg, 0.16, 0.26, 0.16, 0.22, 0.95, -0.8, '#ffffff');
+      box(gg, 0.165, 0.07, 0.165, 0.22, 0.95, -0.8, '#4a90d9');
+      ball(gg, 0.1, -0.1, 1.02, -0.68, '#e74c3c');
+      ball(gg, 0.1, 0.12, 1.0, -1.32, '#ff9f43');
+      box(gg, 0.3, 0.12, 0.22, -0.16, 0.92, -1.3, '#f2c94c');
     }
     return g;
   }
@@ -554,7 +563,7 @@
     rig.position.set(0, -0.85, 0.6);
     flip.add(rig);
 
-    buildCart(rig, true);
+    const cart = buildCart(rig, true);
 
     // 主婦（うしろ姿。顔は進行方向 = -z）
     const body = new T.Group();
@@ -611,7 +620,7 @@
     ball(head, 0.022, 0.07, 0.0, -0.205, '#2b2d42');
 
     root.add(shadow);
-    return { root, flip, rig, body, legs, shadow, head };
+    return { root, flip, rig, body, legs, shadow, head, goods: cart.userData.goods };
   }
 
   // ---------- 人（買い物客・店員） ----------
@@ -759,7 +768,82 @@
     }
   }
 
+  // バス（後ろ = +z）
+  function buildBus(o) {
+    const g = new T.Group();
+    const len = o.len;
+    const w = o.w * 2;
+    blob(g, o.w * 1.15, len * 0.55);
+    box(g, w, 2.6, len, 0, 1.75, 0, o.color);
+    box(g, w + 0.02, 0.5, len, 0, 0.7, 0, shade(o.color, -0.25));
+    // 窓の帯
+    box(g, w + 0.02, 0.9, len * 0.92, 0, 2.2, -0.1, '#2d3e55');
+    box(g, w * 0.86, 0.9, 0.03, 0, 2.2, len / 2 + 0.01, '#2d3e55');
+    const sign = new T.Mesh(GEO.plane, new T.MeshBasicMaterial({ map: textTex('下町循環', '#2b2d42', '#ffb300', 512, 128) }));
+    sign.position.set(0, 2.85, len / 2 + 0.02);
+    sign.scale.set(w * 0.6, 0.3, 1);
+    g.add(sign);
+    for (const s of [-1, 1]) box(g, w * 0.14, 0.3, 0.04, s * w * 0.38, 1.0, len / 2 + 0.01, MB('#ff3b3b'));
+    for (const z of [-len * 0.32, len * 0.3]) {
+      for (const s of [-1, 1]) {
+        const wh = cyl(g, 0.48, 0.3, s * (w / 2 - 0.1), 0.48, z, '#1d1d1d');
+        wh.rotation.z = Math.PI / 2;
+      }
+    }
+    addBlinkers(g, w, 1.0, len / 2 + 0.03, 3.4);
+    return g;
+  }
+
   // ---------- 小物・障害物 ----------
+  // 立て看板（A型）。はね飛ばせる
+  const KANBAN_TEXTS = [['本日特売', '#e84a4a'], ['コロッケ', '#ff9f1a'], ['もんじゃ', '#2ec4b6'], ['日替わり', '#5fa4e6'], ['大安売り', '#e84a4a']];
+  function buildKanban(o) {
+    const g = new T.Group();
+    blob(g, 0.35, 0.3);
+    const [txt, col] = KANBAN_TEXTS[Math.floor((o.seed || 0) * KANBAN_TEXTS.length)];
+    const face = new T.MeshLambertMaterial({ map: textTex(txt, '#fffaf0', col, 128, 256, { border: col, radius: 10, size: 0.22 }) });
+    for (const s of [-1, 1]) {
+      const p = new T.Mesh(GEO.box, [M('#6b4f3a'), M('#6b4f3a'), M('#6b4f3a'), M('#6b4f3a'), face, face]);
+      p.scale.set(0.55, 1.1, 0.04);
+      p.position.set(0, 0.55, s * 0.14);
+      p.rotation.x = -s * 0.22;
+      g.add(p);
+    }
+    return g;
+  }
+  // 工事や駐車場の横バー（ジャンプで越えるかスライディングでくぐる）
+  function buildBar(o) {
+    const g = new T.Group();
+    const w = o.w * 2;
+    for (const s of [-1, 1]) {
+      box(g, 0.14, 1.35, 0.14, s * (o.w + 0.05), 0.68, 0, '#e8e8e8');
+      box(g, 0.4, 0.08, 0.4, s * (o.w + 0.05), 0.04, 0, '#666666');
+    }
+    const bar = new T.Mesh(GEO.box, [M('#c9a200'), M('#c9a200'), M('#e0b800'), M('#c9a200'), new T.MeshLambertMaterial({ map: stripeBarrierTex }), new T.MeshLambertMaterial({ map: stripeBarrierTex })]);
+    bar.scale.set(w + 0.1, 0.3, 0.1);
+    bar.position.set(0, 1.18, 0);
+    g.add(bar);
+    for (const s of [-1, 1]) ball(g, 0.08, s * (o.w + 0.05), 1.42, 0, MB('#ff3b3b'));
+    return g;
+  }
+  // のれん・横断幕（スライディングでくぐる）
+  const NOREN = [['ようこそ', '#2b4c7e'], ['商店街', '#a33b3b'], ['夏まつり', '#2f7d5b'], ['大売出し', '#a33b3b']];
+  function buildNoren(o, market) {
+    const g = new T.Group();
+    const w = o.w * 2;
+    const [txt, col] = market ? ['特売セール', '#e84a4a'] : NOREN[Math.floor((o.seed || 0) * NOREN.length)];
+    const tex = textTex(txt, col, '#ffffff', 512, 160, { radius: 0, size: 0.55 });
+    const cloth = new T.Mesh(GEO.plane, new T.MeshLambertMaterial({ map: tex, side: T.DoubleSide }));
+    cloth.scale.set(w, 0.95, 1);
+    cloth.position.set(0, 1.6, 0);
+    g.add(cloth);
+    // 吊るす棒とひも（天井・アーケードから下がる）
+    const rod = cyl(g, 0.04, w + 0.3, 0, 2.12, 0, '#6b4f3a');
+    rod.rotation.z = Math.PI / 2;
+    for (const s of [-1, 1]) cyl(g, 0.012, 2.5, s * (w / 2), 3.35, 0, '#888888');
+    return g;
+  }
+
   function buildCone() {
     const g = new T.Group();
     blob(g, 0.3, 0.3);
@@ -1027,6 +1111,10 @@
     buildBike,
     buildCar,
     buildTruck,
+    buildBus,
+    buildKanban,
+    buildBar,
+    buildNoren,
     setBlink,
     buildCone,
     buildBarrier,
