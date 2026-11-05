@@ -703,8 +703,6 @@
         return Mo.buildBarrier();
       case 'cat':
         return Mo.buildCat();
-      case 'item':
-        return Mo.buildItem(o.icon);
       case 'ramp':
         return Mo.buildRamp(o);
     }
@@ -738,13 +736,6 @@
       return;
     }
     m.position.set(o.x, 0, -o.z);
-    if (o.kind === 'item') {
-      m.visible = !o.taken;
-      const sp = m.userData.spin;
-      sp.rotation.y = t * 3 + o.z;
-      sp.position.y = 0.75 + Math.sin(t * 4 + o.z) * 0.1;
-      return;
-    }
     if (o.kind === 'shopper' && m.userData.legs) {
       const sw = Math.sin(t * 8 + o.seed * 20) * (o.vx ? 0.6 : 0.15);
       m.userData.legs[0].rotation.x = sw;
@@ -834,7 +825,6 @@
       }
     });
     syncList(G.obstacles, t);
-    syncList(G.items, t);
     syncList(G.ramps || [], t);
     for (const [o, m] of live) {
       if (m.userData.seen !== frameId) {

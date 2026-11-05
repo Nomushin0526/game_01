@@ -15,9 +15,6 @@
     expressway: { roadW: 5.5, limit: 5.0, maxSpeed: 125, accel: 46, steer: 10, lanes: [-3.67, 0, 3.67] }, // 首都高（高架）
   };
 
-  // スピードメーターの表示倍率（ゲーム内の速度 × 3.6 × この値 = 表示 km/h）
-  window.CartSpeedo = { scale: 1.6 };
-
   // 加速ジャンプ台
   //   坂を登りきったところから飛び出す。位置が合っていても、坂の表面に触れていなければ反応しない。
   //   トラック・バスの後ろに付いた台は、屋根の高さから飛び出す。
@@ -46,7 +43,7 @@
   window.CartSale = {
     duration: 6,
     speedMul: 1.6,
-    gain: { smash: 12, trick: 10, nearMiss: 6, item: 2, truckRamp: 8 },
+    gain: { smash: 12, trick: 10, nearMiss: 6, truckRamp: 8 },
   };
 
   // 操作

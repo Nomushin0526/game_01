@@ -931,55 +931,6 @@
     return g;
   }
 
-  // アイテム（浮かんで回る）
-  function buildItem(icon) {
-    const g = new T.Group();
-    const spin = new T.Group();
-    spin.position.y = 0.7;
-    g.add(spin);
-    const glow = new T.Sprite(new T.SpriteMaterial({ map: glowTex, color: 0xfff2a0, transparent: true, depthWrite: false, opacity: 0.8 }));
-    glow.scale.set(1.0, 1.0, 1);
-    spin.add(glow);
-    switch (icon) {
-      case 'apple':
-        ball(spin, 0.2, 0, 0, 0, '#e74c3c');
-        cyl(spin, 0.015, 0.1, 0, 0.22, 0, '#6b4a2f');
-        ball(spin, 0.06, 0.06, 0.24, 0, '#4caf50', 1.4, 0.5, 0.8);
-        break;
-      case 'milk':
-        box(spin, 0.24, 0.36, 0.24, 0, 0, 0, '#ffffff');
-        box(spin, 0.245, 0.1, 0.245, 0, 0.02, 0, '#4a90d9');
-        mesh(GEO.prism, M('#e8edf2'), spin, 0, 0.18, 0, 0.24, 0.3, 0.24);
-        break;
-      case 'bread':
-        ball(spin, 0.14, 0, 0, 0, '#e0a85a', 1.8, 1, 1);
-        break;
-      case 'carrot': {
-        const c = mesh(GEO.cone, M('#ff8c1a'), spin, 0, -0.05, 0, 0.1, 0.4, 0.1);
-        c.rotation.x = Math.PI;
-        ball(spin, 0.08, 0, 0.2, 0, '#4caf50', 1, 1.3, 1);
-        break;
-      }
-      case 'egg':
-        ball(spin, 0.15, 0, 0, 0, '#fff6e5', 1, 1.3, 1);
-        break;
-      default: {
-        const coin = cyl(spin, 0.24, 0.06, 0, 0, 0, M('#f5b301', { emissive: '#4a3200' }));
-        coin.rotation.x = Math.PI / 2;
-        const face = new T.Mesh(GEO.circle, new T.MeshBasicMaterial({ map: textTex('P', '#ffd447', '#b07800', 128, 128, { radius: 64, size: 0.7 }) }));
-        face.scale.set(0.19, 0.19, 1);
-        face.position.z = 0.032;
-        spin.add(face);
-        const back = face.clone();
-        back.position.z = -0.032;
-        back.rotation.y = Math.PI;
-        spin.add(back);
-      }
-    }
-    g.userData.spin = spin;
-    return g;
-  }
-
   const rampMat = new T.MeshLambertMaterial({ map: rampTex, emissive: '#5a2a00' });
   const rampUsedMat = new T.MeshLambertMaterial({ color: '#9a9a9a' });
   function buildRamp(r) {
@@ -1122,7 +1073,6 @@
     buildBoxes,
     buildWetSign,
     buildStrayCart,
-    buildItem,
     buildRamp,
     markRampUsed,
     buildGate,

@@ -6,7 +6,6 @@
   const STAGES = window.CartStages;
   const THEMES = window.CartThemes;
   const JUMP = window.CartJump;
-  const SPEEDO = window.CartSpeedo;
   const CONTROL = window.CartControl;
   const MOVE = window.CartMove;
   const SALE = window.CartSale;
@@ -38,10 +37,6 @@
     hit() {
       audio.noise(0.25, { vol: 0.35, cutoff: 1400 });
       audio.tone(220, 0.25, { type: 'sawtooth', to: 70, vol: 0.18 });
-    },
-    item() {
-      audio.tone(988, 0.07, { type: 'square', vol: 0.1 });
-      audio.tone(1319, 0.12, { type: 'square', vol: 0.1, delay: 0.06 });
     },
     checkpoint() {
       [659, 880, 1047, 1319].forEach((f, i) => audio.tone(f, 0.14, { type: 'triangle', vol: 0.22, delay: i * 0.08 }));
@@ -158,7 +153,6 @@
   const HAIRS = ['#3b2a20', '#6b4a2f', '#2b2b2b', '#a8a8a8', '#c98d4b'];
   const PANTS = ['#3c4a63', '#5b4636', '#2f3640', '#6d6d7a'];
   const CAR_COLORS = ['#e74c3c', '#3498db', '#f1c40f', '#ecf0f1', '#2ecc71', '#9b59b6', '#34495e', '#e67e22'];
-  const GROCERIES = ['apple', 'milk', 'bread', 'carrot', 'egg'];
   const BUS_COLORS = ['#2f9e6e', '#e8eef2', '#3d6fa8'];
 
   const G = {
@@ -167,7 +161,6 @@
     stage: STAGES[0],
     player: { x: 0, z: 0, speed: 0, vx: 0, steer: 0, phase: 0 },
     obstacles: [],
-    items: [],
     particles: [],
     floaters: [],
   };
@@ -189,11 +182,6 @@
       hair: HAIRS[Math.floor(rng() * HAIRS.length)],
       pants: PANTS[Math.floor(rng() * PANTS.length)],
     };
-  }
-  function addItems(x, z, count, icon) {
-    for (let k = 0; k < count; k++) {
-      G.items.push({ kind: 'item', x, z: z + k * 5, icon: icon || GROCERIES[Math.floor(G.rng() * GROCERIES.length)], taken: false });
-    }
   }
 
   // 加速ジャンプ台。確率で「空中で次の台に乗れる位置」に2つ目・3つ目を続けて置く
@@ -311,7 +299,6 @@
       }
       const free = lanes[n] !== undefined ? lanes[n] : 0;
       if (rng() < rampChance) addRamp(free, z - th.maxSpeed * 0.35, th);
-      else if (rng() < 0.6) addItems(free, z + 4, 1 + Math.floor(rng() * 3));
       return th.maxSpeed * (lerp(1.0, 0.7, diff) + rng() * 0.2);
     }
 
@@ -334,7 +321,6 @@
       }
       const free = lanes[n] !== undefined ? lanes[n] : 0;
       if (rng() < rampChance) addRamp(free, z - th.maxSpeed * 0.35, th);
-      else if (rng() < 0.55) addItems(free, z + 5, 1 + Math.floor(rng() * 3));
       return th.maxSpeed * gapSec;
     }
 
@@ -356,7 +342,6 @@
     }
     const free = lanes[n] !== undefined ? lanes[n] : 0;
     if (rng() < rampChance) addRamp(free, z - th.maxSpeed * 0.35, th);
-    else if (rng() < 0.55) addItems(free, z + 6, 2 + Math.floor(rng() * 3), 'coin');
     return th.maxSpeed * gapSec;
   }
 
@@ -407,15 +392,7 @@
     const st = G.stage;
     const normal = G.mode === 'normal';
     $('hearts').classList.toggle('hidden', !normal);
-    $('hits').classList.toggle('hidden', normal);
     $('timer-label').textContent = normal ? 'のこり時間' : 'タイム';
-    const ticks = $('progress-ticks');
-    ticks.innerHTML = '';
-    st.checkpoints.forEach((c) => {
-      const t = document.createElement('i');
-      t.style.left = (c / st.length) * 100 + '%';
-      ticks.appendChild(t);
-    });
     renderHearts();
     hudCache = {};
   }
@@ -436,34 +413,19 @@
     $(id).textContent = value;
   }
   function updateHud() {
-    const P = G.player;
     if (G.mode === 'normal') {
       setText('timer', G.timeLeft.toFixed(1));
       $('timer').classList.toggle('warn', G.timeLeft <= 10 && G.state === 'run');
     } else {
       setText('timer', formatTime(G.elapsed + G.penalty));
-      setText('hits', `ミス ${G.hits}`);
     }
-    setText('score', String(Math.floor(G.score)));
-    setText('speed', String(Math.round(P.speed * 3.6 * SPEEDO.scale)));
     $('app').classList.toggle('boosting', G.boost > 0);
-    $('speed-chip').classList.toggle('hot', G.boost > 0);
-    setText('combo', G.combo > 1 ? `ギリギリ ×${G.combo}` : '');
-    $('combo').classList.toggle('hidden', G.combo < 2);
-    const pct = clamp(P.z / G.stage.length, 0, 1) * 100;
-    $('progress-fill').style.width = pct + '%';
-    $('progress-cart').style.left = pct + '%';
     // セールゲージと発動ボタン
     $('gauge-fill').style.width = G.gauge + '%';
     $('gauge').classList.toggle('full', G.gauge >= 100 && G.sale <= 0);
     $('gauge').classList.toggle('active', G.sale > 0);
     $('btn-sale').classList.toggle('hidden', !(G.gauge >= 100 && G.sale <= 0 && G.state === 'run') || settings.saleAuto);
     $('app').classList.toggle('sale', G.sale > 0);
-    // 次のチェックポイント
-    const st = G.stage;
-    const next = G.cpIndex < st.checkpoints.length ? st.cpNames[G.cpIndex] : st.goalLabel;
-    const dist = Math.max(0, (G.cpIndex < st.checkpoints.length ? st.checkpoints[G.cpIndex] : st.length) - P.z);
-    setText('next-cp', `次は ${next}  ${dist >= 1000 ? (dist / 1000).toFixed(1) + 'km' : Math.round(dist) + 'm'}`);
   }
 
   // ---------- 進行 ----------
@@ -488,7 +450,6 @@
     G.state = 'menu';
     G.stage = STAGES[0];
     G.obstacles = [];
-    G.items = [];
     G.ramps = [];
     G.boost = 0;
     G.boostLevel = 0;
@@ -515,7 +476,6 @@
       stageIdx: idx,
       stage: st,
       obstacles: [],
-      items: [],
       ramps: [],
       particles: [],
       floaters: [],
@@ -540,7 +500,6 @@
       hp: MAX_HP,
       score: 0,
       hits: 0,
-      itemsTaken: 0,
       cpIndex: 0,
       invuln: 0,
       shake: 0,
@@ -646,7 +605,6 @@
     sfx.jump(G.chain);
     if (r.attach) addGauge(SALE.gain.truckRamp);
     haptics.vibrate(chained ? [20, 30, 40] : 35);
-    pulse('speed-chip');
   }
 
   // ジャンプ台の上にいるか・乗ったか・飛び出したかを判定する
@@ -700,7 +658,6 @@
       // 技を決めて着地
       G.score += 100 * Math.max(1, chain);
       addGauge(SALE.gain.trick * Math.max(1, chain) * (P.trick.turns || 1));
-      pulse('score-chip');
       burst(['#ffffff', '#ffd166', '#2ec4b6'], 12);
       P.trick = null;
     }
@@ -754,7 +711,6 @@
     sfx.smash();
     haptics.vibrate(heavy ? 40 : 12);
     G.shake = Math.max(G.shake, heavy ? 0.25 : 0.1);
-    pulse('score-chip');
   }
 
   function grounded() {
@@ -784,13 +740,6 @@
     return !o.flying && zc <= o.z + o.len / 2 + 0.3 && zc >= o.z - o.len / 2 - 0.5 && Math.abs(o.x - P.x) < o.w + 0.3;
   }
 
-  function pulse(id) {
-    const el = $(id);
-    el.classList.remove('pulse');
-    void el.offsetWidth;
-    el.classList.add('pulse');
-  }
-
   function nearMiss() {
     G.combo = G.comboTimer > 0 ? G.combo + 1 : 1;
     G.comboTimer = 2.5;
@@ -800,7 +749,6 @@
     sfx.nearMiss(G.combo);
     addGauge(SALE.gain.nearMiss);
     haptics.vibrate(15);
-    pulse('score-chip');
   }
 
   function passCheckpoint() {
@@ -886,7 +834,6 @@
     const zone = zoneAt(G.stage, P.z);
     const th = THEMES[zone.type];
     if (zone !== G.zone) {
-      if (G.zone && G.state === 'run') showZone(zone.name);
       G.zone = zone;
     }
 
@@ -1016,7 +963,6 @@
     }
     G.obstacles = G.obstacles.filter((o) => o.z + o.len > P.z - CAM_BACK - 2 && Math.abs(o.x) < 30 && !(o.flying && (o.flyT > 2.5 || o.fy < -8)));
     if (P.onObj && !G.obstacles.includes(P.onObj)) P.onObj = null;
-    G.items = G.items.filter((it) => !it.taken && it.z > P.z - CAM_BACK - 2);
     G.ramps = G.ramps.filter((r) => (r.z1 > P.z - CAM_BACK - 2 || r === P.onRamp) && !(r.attach && (r.attach.flying || !G.obstacles.includes(r.attach))));
     if (P.onRamp && !G.ramps.includes(P.onRamp)) P.onRamp = null;
 
@@ -1055,16 +1001,6 @@
           // すれすれで避けた
           o.nmDone = true;
           if (o.minClr >= 0 && o.minClr < 0.45 && G.invuln <= 0) nearMiss();
-        }
-      }
-      for (const it of G.items) {
-        if (!it.taken && it.z + 1.0 >= pz && it.z - 1.0 <= cz && Math.abs(it.x - P.x) < 0.75 && P.y < 1.4) {
-          it.taken = true;
-          G.itemsTaken++;
-          G.score += 100;
-          addGauge(SALE.gain.item);
-          sfx.item();
-          pulse('score-chip');
         }
       }
     }
