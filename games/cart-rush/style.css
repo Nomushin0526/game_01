@@ -300,6 +300,35 @@
   font-size: 15px;
   font-variant-numeric: tabular-nums;
 }
+.chip.pulse {
+  animation: chip-pulse 0.3s ease-out;
+}
+@keyframes chip-pulse {
+  40% {
+    transform: scale(1.18);
+    background: #fff3b0;
+  }
+}
+.chip.speed {
+  transition: background 0.2s, color 0.2s;
+}
+.chip.speed.hot {
+  background: #ff8c1a;
+  color: #fff;
+}
+.combo {
+  position: absolute;
+  right: 10px;
+  top: calc(max(10px, env(safe-area-inset-top)) + 72px);
+  background: var(--secondary);
+  color: #fff;
+  border: 3px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 3px 0 var(--line);
+}
 .chip.speed small {
   margin-left: 2px;
   font-size: 10px;
@@ -480,8 +509,19 @@
   font-weight: 900;
   white-space: nowrap;
 }
+.banner.cp {
+  top: 19%;
+}
 .banner.cp .banner-main {
   color: #ff8c42;
+  font-size: min(34px, 8cqw);
+  -webkit-text-stroke-width: 2px;
+  text-shadow: 0 3px 0 var(--line);
+}
+.banner.cp .banner-sub {
+  font-size: 12px;
+  margin-top: 2px;
+  padding: 1px 10px;
 }
 .banner.goal .banner-main {
   color: var(--primary);

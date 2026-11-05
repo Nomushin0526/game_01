@@ -23,14 +23,14 @@
         <div class="hud-left">
           <div id="hearts" class="hearts" aria-label="HP"></div>
           <div id="hits" class="chip hidden"></div>
-          <div class="chip speed"><b id="speed">0</b><small>km/h</small></div>
+          <div id="speed-chip" class="chip speed"><b id="speed">0</b><small>km/h</small></div>
         </div>
         <div class="hud-center">
           <div id="timer-label" class="timer-label">のこり時間</div>
           <div id="timer" class="timer">30.0</div>
         </div>
         <div class="hud-right">
-          <div class="chip"><span class="score-label">SCORE </span><b id="score">0</b></div>
+          <div id="score-chip" class="chip"><span class="score-label">SCORE </span><b id="score">0</b></div>
           <button id="btn-pause" class="icon-btn" aria-label="一時停止">❚❚</button>
         </div>
       </div>
@@ -40,6 +40,7 @@
         <div class="progress-goal">🏁</div>
         <div id="progress-cart" class="progress-cart">🛒</div>
       </div>
+      <div id="combo" class="combo hidden"></div>
       <div id="zone-label" class="zone-label"></div>
       <div id="banner" class="banner"></div>
       <div id="drag-hint" class="drag-hint hidden">
@@ -97,10 +98,11 @@
             </ul>
           </div>
           <div class="howto-block">
-            <h3>加速パネル</h3>
+            <h3>加速ジャンプ台</h3>
             <ul>
-              <li>床の <b class="pad-mark">≫</b> を踏むと<b>一気に加速</b>（タイム短縮）</li>
-              <li>ただし加速中は障害物が一瞬で迫ってくる。踏むかどうかは判断しだい！</li>
+              <li>オレンジの<b>ジャンプ台</b>に乗ると、ジャンプしながら一気に加速</li>
+              <li>ジャンプ中に次の台に乗ると<b>さらに加速</b>して長く飛べる（最大3段階）</li>
+              <li>空中では低い障害物を飛び越えられる。ただし着地点には要注意！</li>
             </ul>
           </div>
           <div class="howto-block">

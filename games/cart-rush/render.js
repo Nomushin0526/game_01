@@ -4,7 +4,7 @@
   'use strict';
 
   const SEG = 2; // 床を区切る長さ
-  const DRAW = 95; // 描画距離
+  const DRAW = 120; // 描画距離（高速なので遠くまで見せる）
   const CAM_BACK = 7; // プレイヤーの何m後ろにカメラを置くか（遠くを大きめに見せる）
   const CEIL = 9.5; // スーパーの天井の高さ
   const THEMES = window.CartThemes;
@@ -163,10 +163,12 @@
     const playerY = 0.76 * H;
     R.camY = clamp((playerY - 0.4 * H) / R.k, 3.2, 8.5);
     R.hz = playerY - R.camY * R.k;
+    R.baseCamY = R.camY;
   }
-  function setCamera(x, z) {
+  function setCamera(x, z, lift) {
     R.camX = x;
     R.camZ = z;
+    R.camY = R.baseCamY + (lift || 0);
   }
 
   // ---------- 背景 ----------
@@ -547,9 +549,24 @@
   }
 
   // ---------- スプライト ----------
+  // ジャンプ中は影を地面に残し、本体だけ持ち上げる（カメラ高さを一時的にずらして描く）
   function drawPlayer(G, t) {
     const P = G.player;
+    const alt = P.y || 0;
+    const sh = project(P.x, 0, P.z + 0.6);
+    if (sh) shadow(sh.x, sh.y, (0.75 / (1 + alt * 0.4)) * sh.s);
     if (G.invuln > 0 && Math.floor(G.invuln * 14) % 2 === 0) return;
+    const baseCamY = R.camY;
+    R.camY = baseCamY - alt;
+    try {
+      drawPlayerBody(G, t);
+    } finally {
+      R.camY = baseCamY;
+    }
+  }
+
+  function drawPlayerBody(G, t) {
+    const P = G.player;
     const px = P.x;
     const pz = P.z;
     const cz0 = pz + 0.5;
@@ -558,9 +575,6 @@
     const yb = 0.42;
     const yt = 0.98;
 
-    // 影
-    const sh = project(px, 0, pz + 0.6);
-    if (sh) shadow(sh.x, sh.y, 0.75 * sh.s);
 
     // カート: 車輪と脚
     ctx.strokeStyle = '#7b8894';
@@ -1077,33 +1091,50 @@
     }
   }
 
-  // 加速パネル（床に貼られた矢印）
-  function drawPad(it, t) {
+  // 加速ジャンプ台（手前が低く、奥に向かって高くなるスロープ）
+  function drawRamp(it, t) {
     const x0 = it.x - it.w;
     const x1 = it.x + it.w;
-    const z0 = Math.max(it.z - it.len / 2, R.camZ + 0.35);
+    const z0 = it.z - it.len / 2;
     const z1 = it.z + it.len / 2;
-    if (z1 <= z0) return;
-    const glow = 0.5 + Math.sin(t * 10) * 0.5;
-    flat(x0 - 0.08, x1 + 0.08, 0.01, z0, z1, it.used ? '#b9a27a' : mix('#ff7a00', '#ffd23f', glow * 0.5));
-    flat(x0 + 0.05, x1 - 0.05, 0.012, z0 + 0.05, z1 - 0.05, it.used ? '#8f8f8f' : '#2b2d42');
-    const n = 3;
-    const step = it.len / n;
+    if (z0 < R.camZ + 0.4) return;
+    const h = it.h;
+    const used = it.used;
+    const glow = 0.5 + Math.sin(t * 12) * 0.5;
+    const top = used ? '#9a9a9a' : mix('#ff7a00', '#ffb000', glow);
+    const side = used ? '#6f6f6f' : '#c4430a';
+    const g = project(it.x, 0, it.z);
+    if (g) shadow(g.x, g.y, (it.w + 0.2) * g.s);
+    // 遠くからでも見えるよう、床に光る縁取り
+    if (!used) flat(x0 - 0.25, x1 + 0.25, 0.005, z0 - 0.3, z1 + 0.1, mix('#ffd23f', '#ffffff', glow * 0.6));
+    // 側面（三角形）: カメラから見える側だけ
+    if (R.camX < x0) poly([project(x0, 0, z0), project(x0, h, z1), project(x0, 0, z1)], side);
+    if (R.camX > x1) poly([project(x1, 0, z0), project(x1, h, z1), project(x1, 0, z1)], side);
+    // 斜面
+    poly([project(x0, 0, z0), project(x1, 0, z0), project(x1, h, z1), project(x0, h, z1)], top);
+    // ふちの白線
+    const lip = (k) => [it.x - it.w * k, it.x + it.w * k];
+    const [lx0, lx1] = lip(1);
+    poly([project(lx0, h - 0.04, z1 - 0.08), project(lx1, h - 0.04, z1 - 0.08), project(lx1, h, z1), project(lx0, h, z1)], '#ffffff');
+    // 斜面の矢印（流れるアニメーション）
+    const n = 2;
     for (let k = 0; k < n; k++) {
-      const zc = it.z - it.len / 2 + ((k + (t * 2.2) % 1) % n) * step;
-      const za = zc;
-      if (za < z0 || za + 0.7 > z1) continue;
-      const y = 0.015;
+      const f = (k / n + (t * 1.8) % 1) % 1;
+      const za = z0 + 0.15 + f * (it.len - 0.9);
+      const zb = za + 0.6;
+      const ya = (h * (za - z0)) / it.len;
+      const yb = (h * (zb - z0)) / it.len;
+      const ym = (ya + yb) / 2;
       poly(
         [
-          project(x0 + 0.1, y, za),
-          project(it.x, y, za + 0.5),
-          project(x1 - 0.1, y, za),
-          project(x1 - 0.1, y, za + 0.22),
-          project(it.x, y, za + 0.72),
-          project(x0 + 0.1, y, za + 0.22),
+          project(x0 + 0.15, ya, za),
+          project(it.x, ym + 0.02, za + 0.35),
+          project(x1 - 0.15, ya, za),
+          project(x1 - 0.15, ya + 0.06, za + 0.2),
+          project(it.x, yb, zb),
+          project(x0 + 0.15, ya + 0.06, za + 0.2),
         ],
-        it.used ? '#cfcfcf' : '#ffd23f'
+        used ? '#c8c8c8' : '#fff3b0'
       );
     }
   }
@@ -1302,8 +1333,8 @@
         return drawCat(it, t);
       case 'item':
         return drawItem(it, t);
-      case 'pad':
-        return drawPad(it, t);
+      case 'ramp':
+        return drawRamp(it, t);
       case 'house':
         return drawHouse(it);
       case 'tree':
@@ -1353,9 +1384,9 @@
 
     for (const o of G.obstacles) list.push(o);
     for (const it of G.items) if (!it.taken) list.push(it);
-    for (const pd of G.pads || []) list.push(pd);
+    for (const r of G.ramps || []) list.push(r);
     if (G.showPlayer !== false) list.push({ kind: 'player', z: P.z + 0.5 });
-    const key = (o) => (o.kind === 'pad' ? o.z + o.len / 2 : o.z);
+    const key = (o) => (o.kind === 'ramp' ? o.z + o.len / 2 : o.z);
     list.sort((a, b) => key(b) - key(a));
 
     for (const it of list) {
@@ -1385,7 +1416,8 @@
     const sp = P.speed / th.maxSpeed;
     if (sp > 0.85 || G.boost > 0) {
       const boosting = G.boost > 0;
-      const n = boosting ? 26 : 12;
+      const lv = G.boostLevel || 0;
+      const n = boosting ? 18 + lv * 10 : 12;
       ctx.strokeStyle = boosting ? 'rgba(255,230,150,0.75)' : 'rgba(255,255,255,0.45)';
       ctx.lineWidth = boosting ? 3 : 2;
       ctx.beginPath();
@@ -1395,7 +1427,7 @@
       for (let k = 0; k < n; k++) {
         const a = hash(k, fr, 3) * Math.PI * 2;
         const r0 = R.H * (0.32 + hash(k, fr, 4) * 0.25);
-        const len = boosting ? 110 : 60;
+        const len = boosting ? 80 + lv * 40 : 60;
         ctx.moveTo(cx + Math.cos(a) * r0 * 0.6, cy + Math.sin(a) * r0);
         ctx.lineTo(cx + Math.cos(a) * (r0 + len) * 0.6, cy + Math.sin(a) * (r0 + len));
       }
