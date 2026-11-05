@@ -13,7 +13,8 @@
     <link rel="stylesheet" href="../../shared/ui.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
+  <body class="app-body">
+    <div id="app" class="app">
     <canvas id="game" aria-label="ゲーム画面"></canvas>
 
     <!-- プレイ中の表示 -->
@@ -22,6 +23,7 @@
         <div class="hud-left">
           <div id="hearts" class="hearts" aria-label="HP"></div>
           <div id="hits" class="chip hidden"></div>
+          <div class="chip speed"><b id="speed">0</b><small>km/h</small></div>
         </div>
         <div class="hud-center">
           <div id="timer-label" class="timer-label">のこり時間</div>
@@ -40,9 +42,12 @@
       </div>
       <div id="zone-label" class="zone-label"></div>
       <div id="banner" class="banner"></div>
-      <div id="touch-hint" class="touch-hint hidden">
-        <span>◀ 左側をタッチ</span><span>右側をタッチ ▶</span>
+      <div id="drag-hint" class="drag-hint hidden">
+        <div class="drag-track"><span class="drag-finger">👆</span></div>
+        <p>画面のどこでも指を置いて<br />左右にスライド！</p>
+        <p id="drag-hint-sub" class="sub">PCでは ← → キーでも操作できます</p>
       </div>
+      <div class="boost-fx"></div>
       <div id="flash" class="flash"></div>
     </div>
 
@@ -62,6 +67,7 @@
         </div>
         <div class="row-links">
           <a href="../../index.html" class="link">← ゲーム一覧</a>
+          <button id="btn-vibe" class="link" type="button">📳 振動 ON</button>
           <button id="btn-sound" class="link" type="button">🔊 サウンド ON</button>
         </div>
       </div>
@@ -85,31 +91,35 @@
           <div class="howto-block">
             <h3>操作</h3>
             <ul>
-              <li><kbd>←</kbd><kbd>→</kbd> または <kbd>A</kbd><kbd>D</kbd>：左右に移動</li>
-              <li><kbd>↓</kbd> または <kbd>S</kbd>：ブレーキ</li>
-              <li><kbd>P</kbd> / <kbd>Esc</kbd>：一時停止</li>
-              <li>スマホ：画面の左側／右側をタッチして移動</li>
+              <li>画面のどこでも指を置いて、<b>左右にスライド</b>するとカートが動く</li>
+              <li>指を動かした分だけ横に動くので、すき間を狙って細かく調整しよう</li>
+              <li>右上の ❚❚ で一時停止</li>
+            </ul>
+          </div>
+          <div class="howto-block">
+            <h3>加速パネル</h3>
+            <ul>
+              <li>床の <b class="pad-mark">≫</b> を踏むと<b>一気に加速</b>（タイム短縮）</li>
+              <li>ただし加速中は障害物が一瞬で迫ってくる。踏むかどうかは判断しだい！</li>
+            </ul>
+          </div>
+          <div class="howto-block">
+            <h3>ギリギリ回避</h3>
+            <ul>
+              <li>障害物すれすれで避けるとボーナス。続けるほど点数アップ</li>
             </ul>
           </div>
           <div class="howto-block">
             <h3>チェックポイントモード</h3>
             <ul>
-              <li>のこり時間が0になるか、HPがなくなるとゲームオーバー</li>
-              <li>チェックポイントを通ると<b>時間が追加</b>され、<b>HPが1回復</b></li>
-              <li>ゴール時の残りタイムとHPがボーナスになる</li>
+              <li>のこり時間が0か、HPがなくなるとゲームオーバー</li>
+              <li>チェックポイントで<b>時間が追加</b>＋<b>HPが1回復</b></li>
             </ul>
           </div>
           <div class="howto-block">
             <h3>タイムアタック</h3>
             <ul>
-              <li>HPなし。ぶつかるたびにタイムに<b>+3秒</b></li>
-              <li>ゴールまでの最速タイムを目指そう</li>
-            </ul>
-          </div>
-          <div class="howto-block">
-            <h3>アイテム</h3>
-            <ul>
-              <li>浮かんでいる食材やポイントを拾うと +100点</li>
+              <li>HPなし。ぶつかるたびに<b>+3秒</b>。最速タイムを目指そう</li>
             </ul>
           </div>
         </div>
@@ -144,7 +154,12 @@
       </div>
     </section>
 
+    </div>
+
+    <div class="rotate-notice"><div class="icon">📱</div><p>スマホを縦向きにしてね</p></div>
+
     <script src="../../shared/storage.js"></script>
+    <script src="../../shared/haptics.js"></script>
     <script src="../../shared/audio.js"></script>
     <script src="../../shared/input.js"></script>
     <script src="stages.js"></script>

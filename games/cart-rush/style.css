@@ -1,17 +1,15 @@
-html,
-body {
-  height: 100%;
-  overflow: hidden;
+/* カートラッシュ！ スマホ縦画面専用のスタイル
+   サイズは .app（ゲーム枠）基準の cqw / cqh を使う。PCでも中央の縦長枠に同じ見た目で表示される。 */
+
+.app {
   background: #efe9dc;
-  overscroll-behavior: none;
 }
 
 #game {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  width: 100vw;
-  height: 100vh;
-  height: 100dvh;
+  width: 100%;
+  height: 100%;
   display: block;
   touch-action: none;
 }
@@ -22,35 +20,40 @@ body {
 
 /* ---------- 画面（メニュー類） ---------- */
 .screen {
-  position: fixed;
+  position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
   overflow-y: auto;
-  background: rgba(255, 250, 240, 0.25);
+  touch-action: pan-y;
+  background: rgba(255, 250, 240, 0.2);
   z-index: 10;
 }
 .screen.dim {
-  background: rgba(43, 45, 66, 0.45);
+  background: rgba(43, 45, 66, 0.5);
 }
 .menu-panel {
-  width: min(420px, 100%);
+  width: 100%;
+  max-width: 400px;
   text-align: center;
+  padding: 22px 18px;
 }
-.menu-panel.wide {
-  width: min(640px, 100%);
+/* タイトルはボタンを親指の届く下側に寄せる */
+#screen-title {
+  align-items: end;
+  padding-bottom: max(28px, env(safe-area-inset-bottom));
 }
 .eyebrow {
   margin: 0;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--primary-dark);
   letter-spacing: 0.2em;
 }
 .logo {
-  margin: 4px 0 22px;
-  font-size: clamp(40px, 9vw, 56px);
+  margin: 2px 0 18px;
+  font-size: min(54px, 14cqw);
   font-weight: 900;
   line-height: 1.05;
   color: var(--ink);
@@ -62,8 +65,8 @@ body {
   text-shadow: 3px 3px 0 var(--line);
 }
 .screen-title {
-  margin: 4px 0 18px;
-  font-size: 26px;
+  margin: 2px 0 14px;
+  font-size: 24px;
   font-weight: 900;
 }
 .btn-col {
@@ -71,22 +74,32 @@ body {
   flex-direction: column;
   gap: 12px;
 }
+.btn {
+  min-height: 60px;
+  font-size: 18px;
+}
 .row-links {
   display: flex;
   justify-content: space-between;
-  margin-top: 16px;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 14px;
+}
+.row-links .link {
+  font-size: 13px;
 }
 
 /* ステージ選択 */
 .stage-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 .stage-card {
   display: flex;
   align-items: stretch;
+  min-height: 112px;
   text-align: left;
   border: 3px solid var(--line);
   border-radius: 16px;
@@ -97,17 +110,14 @@ body {
   cursor: pointer;
   font-family: inherit;
   color: inherit;
-  transition: transform 0.08s ease;
-}
-.stage-card:hover {
-  transform: translateY(-2px);
+  touch-action: manipulation;
 }
 .stage-card:active {
   transform: translateY(3px);
   box-shadow: 0 1px 0 var(--line);
 }
 .stage-thumb {
-  flex: 0 0 120px;
+  flex: 0 0 84px;
   display: grid;
   place-items: end center;
   padding: 8px;
@@ -117,9 +127,10 @@ body {
   background: var(--line);
   color: #fff;
   font-weight: 900;
-  font-size: 12px;
+  font-size: 11px;
   padding: 2px 8px;
   border-radius: 999px;
+  white-space: nowrap;
 }
 .stage-market .stage-thumb {
   background:
@@ -128,19 +139,15 @@ body {
 }
 .stage-home .stage-thumb {
   background:
-    linear-gradient(90deg, #84c55f 0 22%, #d4d0c6 22% 28%, #5a6068 28% 72%, #d4d0c6 72% 78%, #84c55f 78%),
-    #84c55f;
-  background-size: 100% 55%;
-  background-position: bottom;
-  background-repeat: no-repeat;
-  background-color: #9fd6f5;
+    linear-gradient(90deg, #84c55f 0 22%, #d4d0c6 22% 28%, #5a6068 28% 72%, #d4d0c6 72% 78%, #84c55f 78%) bottom / 100% 55% no-repeat,
+    #9fd6f5;
 }
 .stage-info {
-  padding: 12px 16px;
+  padding: 10px 12px;
 }
 .stage-info h3 {
   margin: 0 0 4px;
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 900;
 }
 .stage-info h3 .tag {
@@ -151,12 +158,13 @@ body {
 }
 .stage-info p {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--ink-soft);
 }
 .stage-info .best {
-  margin-top: 6px;
+  margin-top: 4px;
+  font-size: 13px;
   font-weight: 800;
   color: var(--ink);
 }
@@ -164,19 +172,19 @@ body {
 /* あそびかた */
 .howto {
   text-align: left;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 .howto-block {
   background: var(--paper-2);
   border: 2px solid var(--line);
   border-radius: 12px;
-  padding: 10px 14px;
+  padding: 8px 12px;
 }
 .howto h3 {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   font-size: 15px;
   font-weight: 900;
 }
@@ -184,28 +192,20 @@ body {
   margin: 0;
   padding-left: 18px;
   font-size: 13px;
-  line-height: 1.8;
+  line-height: 1.7;
 }
-kbd {
+.pad-mark {
   display: inline-block;
-  min-width: 22px;
-  padding: 0 5px;
-  border: 2px solid var(--line);
-  border-bottom-width: 3px;
-  border-radius: 6px;
-  background: #fff;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  text-align: center;
-  line-height: 18px;
-  margin-right: 2px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #2b2d42;
+  color: #ffd23f;
 }
 
 /* 結果 */
 .result-head {
   margin: 4px 0 2px;
-  font-size: 38px;
+  font-size: min(36px, 10cqw);
   font-weight: 900;
 }
 .result-head.clear {
@@ -216,29 +216,31 @@ kbd {
   color: var(--ink);
 }
 .result-sub {
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   color: var(--ink-soft);
   font-weight: 800;
+  font-size: 14px;
 }
 .result-rows {
   border: 2px solid var(--line);
   border-radius: 12px;
   background: #fff;
-  padding: 6px 14px;
-  margin-bottom: 16px;
+  padding: 4px 12px;
+  margin-bottom: 14px;
 }
 .result-rows .row {
   display: flex;
   justify-content: space-between;
-  padding: 7px 0;
+  gap: 8px;
+  padding: 6px 0;
   border-bottom: 1px dashed #d9d2c2;
-  font-size: 15px;
+  font-size: 14px;
 }
 .result-rows .row:last-child {
   border-bottom: none;
 }
 .result-rows .row.total {
-  font-size: 19px;
+  font-size: 18px;
   color: var(--primary-dark);
 }
 .badge {
@@ -257,51 +259,60 @@ kbd {
   }
 }
 
-/* ---------- HUD ---------- */
+/* ---------- HUD（プレイ中の表示） ---------- */
 .hud {
-  position: fixed;
+  position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 5;
-  padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+  padding: max(10px, env(safe-area-inset-top)) 10px 10px;
 }
 .hud-top {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: start;
-  gap: 8px;
+  gap: 6px;
+}
+.hud-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 .hud-right {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 .chip {
   display: inline-block;
   background: rgba(255, 255, 255, 0.92);
   border: 3px solid var(--line);
   border-radius: 999px;
-  padding: 4px 12px;
+  padding: 2px 9px;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 12px;
   box-shadow: 0 3px 0 var(--line);
   white-space: nowrap;
 }
 .chip b {
-  font-size: 17px;
+  font-size: 15px;
   font-variant-numeric: tabular-nums;
+}
+.chip.speed small {
+  margin-left: 2px;
+  font-size: 10px;
 }
 .hearts {
   display: flex;
-  gap: 4px;
+  gap: 2px;
 }
 .heart {
-  font-size: 30px;
+  font-size: 24px;
   line-height: 1;
   color: rgba(43, 45, 66, 0.25);
   -webkit-text-stroke: 2px var(--line);
-  transition: transform 0.2s;
 }
 .heart.full {
   color: var(--danger);
@@ -316,21 +327,20 @@ kbd {
   text-align: center;
   background: rgba(255, 255, 255, 0.92);
   border: 3px solid var(--line);
-  border-radius: 16px;
-  padding: 2px 18px 4px;
+  border-radius: 14px;
+  padding: 1px 10px 3px;
   box-shadow: 0 4px 0 var(--line);
 }
 .timer-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   color: var(--ink-soft);
 }
 .timer {
-  font-size: 30px;
+  font-size: 24px;
   font-weight: 900;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
-  min-width: 3.4em;
 }
 .timer.warn {
   color: var(--danger);
@@ -343,15 +353,16 @@ kbd {
 }
 .icon-btn {
   pointer-events: auto;
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   border: 3px solid var(--line);
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 3px 0 var(--line);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 900;
   cursor: pointer;
+  touch-action: manipulation;
 }
 .icon-btn:active {
   transform: translateY(2px);
@@ -360,9 +371,9 @@ kbd {
 
 .progress {
   position: relative;
-  margin: 12px auto 0;
-  width: min(520px, 70%);
-  height: 12px;
+  margin: 10px auto 0;
+  width: 80%;
+  height: 10px;
   border: 3px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.85);
@@ -378,7 +389,7 @@ kbd {
   position: absolute;
   top: -5px;
   width: 4px;
-  height: 16px;
+  height: 14px;
   margin-left: -2px;
   background: #ff8c42;
   border-radius: 2px;
@@ -386,28 +397,28 @@ kbd {
 }
 .progress-goal {
   position: absolute;
-  right: -14px;
-  top: -12px;
-  font-size: 22px;
+  right: -12px;
+  top: -11px;
+  font-size: 18px;
 }
 .progress-cart {
   position: absolute;
-  top: -14px;
+  top: -12px;
   left: 0;
-  font-size: 22px;
+  font-size: 18px;
   transform: translateX(-50%) scaleX(-1);
 }
 
 .zone-label {
   position: absolute;
   left: 50%;
-  top: 130px;
+  top: calc(max(10px, env(safe-area-inset-top)) + 96px);
   transform: translateX(-50%);
   background: var(--line);
   color: #fff;
   font-weight: 900;
-  font-size: 16px;
-  padding: 6px 18px;
+  font-size: 14px;
+  padding: 5px 16px;
   border-radius: 999px;
   opacity: 0;
   white-space: nowrap;
@@ -433,7 +444,8 @@ kbd {
 .banner {
   position: absolute;
   left: 50%;
-  top: 36%;
+  top: 30%;
+  width: 100%;
   transform: translate(-50%, -50%) scale(0.6);
   text-align: center;
   opacity: 0;
@@ -449,7 +461,7 @@ kbd {
   }
 }
 .banner-main {
-  font-size: clamp(42px, 9vw, 76px);
+  font-size: min(64px, 13cqw);
   font-weight: 900;
   color: #fff;
   -webkit-text-stroke: 3px var(--line);
@@ -463,8 +475,8 @@ kbd {
   background: #fff;
   border: 3px solid var(--line);
   border-radius: 999px;
-  padding: 4px 16px;
-  font-size: 17px;
+  padding: 3px 14px;
+  font-size: 15px;
   font-weight: 900;
   white-space: nowrap;
 }
@@ -481,18 +493,74 @@ kbd {
   color: #9aa1b5;
 }
 
-.touch-hint {
+/* 操作ガイド（カウントダウン中に表示） */
+.drag-hint {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 18%;
-  display: flex;
-  justify-content: space-around;
+  bottom: 8%;
+  text-align: center;
   font-weight: 900;
-  color: #fff;
-  -webkit-text-stroke: 1px var(--line);
-  font-size: 18px;
-  animation: blink 1s steps(2) infinite;
+  color: var(--ink);
+}
+.drag-hint p {
+  display: inline-block;
+  margin: 6px 0 0;
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 3px solid var(--line);
+  border-radius: 14px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.drag-hint p.sub {
+  display: block;
+  width: fit-content;
+  margin: 6px auto 0;
+  font-size: 11px;
+  padding: 2px 10px;
+  border-width: 2px;
+}
+.drag-track {
+  position: relative;
+  width: 60%;
+  height: 46px;
+  margin: 0 auto;
+  border-bottom: 4px dashed rgba(43, 45, 66, 0.4);
+}
+.drag-finger {
+  position: absolute;
+  left: 50%;
+  bottom: -14px;
+  font-size: 40px;
+  animation: swipe 1.4s ease-in-out infinite;
+}
+@keyframes swipe {
+  0%,
+  100% {
+    transform: translateX(-130%);
+  }
+  50% {
+    transform: translateX(30%);
+  }
+}
+
+/* 加速中は画面のふちがオレンジに光る */
+.boost-fx {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at 50% 60%, transparent 55%, rgba(255, 140, 26, 0.55));
+  transition: opacity 0.2s;
+}
+.app.boosting .boost-fx {
+  opacity: 1;
+  animation: boost-pulse 0.25s ease-in-out infinite alternate;
+}
+@keyframes boost-pulse {
+  to {
+    opacity: 0.6;
+  }
 }
 
 .flash {
@@ -510,49 +578,5 @@ kbd {
   }
   100% {
     opacity: 0;
-  }
-}
-
-@media (max-width: 560px) {
-  .hud {
-    padding-left: max(10px, env(safe-area-inset-left));
-    padding-right: max(10px, env(safe-area-inset-right));
-  }
-  .hud-top {
-    gap: 6px;
-  }
-  .hud-center {
-    padding: 2px 10px 4px;
-  }
-  .timer {
-    font-size: 22px;
-    min-width: 0;
-  }
-  .score-label {
-    display: none;
-  }
-  .icon-btn {
-    width: 36px;
-    height: 36px;
-  }
-  .progress {
-    width: 78%;
-  }
-  .heart {
-    font-size: 24px;
-  }
-  .chip {
-    font-size: 12px;
-    padding: 3px 8px;
-  }
-  .chip b {
-    font-size: 14px;
-  }
-  .stage-thumb {
-    flex-basis: 80px;
-  }
-  .zone-label {
-    top: 120px;
-    font-size: 14px;
   }
 }

@@ -1,5 +1,8 @@
-// 全ゲーム共通: キーボード + タッチ/マウス入力
-// 画面の左半分を押している = 左、右半分 = 右 として axisX() に反映する
+// 全ゲーム共通: 入力（スマホのタッチ操作が基本。PCでの確認用にキーボードも受け付ける）
+//
+// - ドラッグ: 指を置いて動かした横方向の移動量を consumeDragX() で受け取る（指でなぞる操作）
+// - 左右タッチ: touchAxis() で「画面の左右どちらを押しているか」を -1 / 0 / 1 で受け取る
+// - キーボード: axisX() で ←→ / A D を -1 / 0 / 1 で受け取る
 (function () {
   'use strict';
   const NS = (window.GameShared = window.GameShared || {});
@@ -9,7 +12,9 @@
     constructor(touchTarget) {
       this.keys = new Set();
       this.pressed = new Set();
-      this.pointers = new Map(); // pointerId -> 0..1 の横位置
+      this.pointers = new Map(); // pointerId -> { x0..1, lastX(px) }
+      this.dragId = null;
+      this.dragDX = 0;
 
       window.addEventListener('keydown', (e) => {
         if (BLOCK.includes(e.code)) e.preventDefault();
@@ -17,33 +22,51 @@
         this.keys.add(e.code);
       });
       window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-      window.addEventListener('blur', () => {
-        this.keys.clear();
-        this.pointers.clear();
-      });
+      window.addEventListener('blur', () => this.reset());
 
-      if (touchTarget) {
-        const t = touchTarget;
-        const pos = (e) => {
-          const r = t.getBoundingClientRect();
-          return (e.clientX - r.left) / Math.max(1, r.width);
-        };
-        t.addEventListener('pointerdown', (e) => {
-          this.pointers.set(e.pointerId, pos(e));
-          try {
-            t.setPointerCapture(e.pointerId);
-          } catch (err) {
-            /* ignore */
-          }
-        });
-        t.addEventListener('pointermove', (e) => {
-          if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, pos(e));
-        });
-        const end = (e) => this.pointers.delete(e.pointerId);
-        t.addEventListener('pointerup', end);
-        t.addEventListener('pointercancel', end);
-        t.addEventListener('lostpointercapture', end);
-      }
+      if (!touchTarget) return;
+      const t = touchTarget;
+      const rel = (e) => {
+        const r = t.getBoundingClientRect();
+        return (e.clientX - r.left) / Math.max(1, r.width);
+      };
+      t.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.pointers.set(e.pointerId, { x: rel(e), lastX: e.clientX });
+        if (this.dragId === null) this.dragId = e.pointerId;
+        try {
+          t.setPointerCapture(e.pointerId);
+        } catch (err) {
+          /* ignore */
+        }
+      });
+      t.addEventListener('pointermove', (e) => {
+        const p = this.pointers.get(e.pointerId);
+        if (!p) return;
+        if (e.pointerId === this.dragId) this.dragDX += e.clientX - p.lastX;
+        p.lastX = e.clientX;
+        p.x = rel(e);
+      });
+      const end = (e) => {
+        this.pointers.delete(e.pointerId);
+        if (e.pointerId === this.dragId) {
+          // 別の指が残っていればそちらに引き継ぐ
+          const next = this.pointers.keys().next();
+          this.dragId = next.done ? null : next.value;
+        }
+      };
+      t.addEventListener('pointerup', end);
+      t.addEventListener('pointercancel', end);
+      t.addEventListener('lostpointercapture', end);
+      // 長押しメニューや選択を出さない
+      t.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+
+    reset() {
+      this.keys.clear();
+      this.pointers.clear();
+      this.dragId = null;
+      this.dragDX = 0;
     }
 
     down(...codes) {
@@ -55,13 +78,30 @@
       return codes.some((c) => this.pressed.has(c));
     }
 
-    // -1（左）〜 1（右）
+    // キーボードの左右 (-1〜1)
     axisX() {
       let a = 0;
       if (this.down('ArrowLeft', 'KeyA')) a -= 1;
       if (this.down('ArrowRight', 'KeyD')) a += 1;
-      for (const v of this.pointers.values()) a += v < 0.5 ? -1 : 1;
+      return a;
+    }
+
+    // 画面の左右どちらを押しているか (-1〜1)
+    touchAxis() {
+      let a = 0;
+      for (const p of this.pointers.values()) a += p.x < 0.5 ? -1 : 1;
       return Math.max(-1, Math.min(1, a));
+    }
+
+    // 前回呼んでからの指の横移動量（px）
+    consumeDragX() {
+      const d = this.dragDX;
+      this.dragDX = 0;
+      return d;
+    }
+
+    get touching() {
+      return this.pointers.size > 0;
     }
 
     endFrame() {

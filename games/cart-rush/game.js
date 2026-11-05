@@ -2,9 +2,10 @@
 (function () {
   'use strict';
 
-  const { storage, audio, Input, isTouchDevice } = window.GameShared;
+  const { storage, audio, haptics, Input, isTouchDevice } = window.GameShared;
   const STAGES = window.CartStages;
   const THEMES = window.CartThemes;
+  const BOOST = window.CartBoost;
   const Render = window.CartRender;
   const { DRAW, CAM_BACK, zoneAt } = Render;
   const MAX_HP = 3;
@@ -14,6 +15,7 @@
   const ctx = canvas.getContext('2d');
   Render.setContext(ctx);
   const input = new Input(canvas);
+  new ResizeObserver(() => resize()).observe(canvas);
   const $ = (id) => document.getElementById(id);
 
   let records = storage.get(REC_KEY, {});
@@ -52,6 +54,13 @@
     },
     click() {
       audio.tone(660, 0.05, { type: 'square', vol: 0.08 });
+    },
+    boost() {
+      audio.tone(300, 0.45, { type: 'sawtooth', to: 1400, vol: 0.12 });
+      audio.noise(0.35, { vol: 0.12, cutoff: 3000 });
+    },
+    nearMiss(combo) {
+      audio.tone(1200 + Math.min(combo, 8) * 120, 0.08, { type: 'square', vol: 0.09 });
     },
   };
 
@@ -142,68 +151,83 @@
     }
   }
 
-  // 1列ぶんの障害物を置き、次の列までの間隔を返す
+  // 加速パネル
+  function addPad(x, z) {
+    if (z < 30) return;
+    G.pads.push({ kind: 'pad', x, z, w: 0.55, len: 2.6, used: false });
+  }
+
+  // 1列ぶんの障害物を置き、次の列までの間隔を返す。
+  // 列の間隔は「最高速で何秒後に次の列が来るか」で決める（速いほど距離も開くが、判断の猶予は短くなる）
   function spawnRow(z) {
     const rng = G.rng;
     const zone = zoneAt(G.stage, z);
     const th = THEMES[zone.type];
     const diff = clamp(z / G.stage.length, 0, 1);
+    const gapSec = lerp(0.85, 0.55, diff) + rng() * 0.2;
+    const padChance = 0.28 + diff * 0.1;
 
     if (zone.type === 'market') {
       const lanes = shuffle(rng, [-2.2, -1.1, 0, 1.1, 2.2]);
-      const n = 1 + (rng() < 0.35 + diff * 0.4 ? 1 : 0) + (rng() < diff * 0.35 ? 1 : 0);
+      const n = 1 + (rng() < 0.4 + diff * 0.4 ? 1 : 0) + (rng() < 0.1 + diff * 0.35 ? 1 : 0);
       for (let k = 0; k < n; k++) {
         const x = lanes[k] + (rng() - 0.5) * 0.3;
         const kind = pickWeighted(rng, { shopper: 36, cart: 18, display: 14, boxes: 16, wetsign: 16 });
         const oz = z + rng() * 2;
         if (kind === 'shopper') {
           const moving = rng() < 0.3 + diff * 0.3;
-          addOb('shopper', x, oz, Object.assign(person(rng), { basket: rng() < 0.6, vx: moving ? (rng() < 0.5 ? -1 : 1) * (0.5 + rng() * 0.7) : 0, bounce: 2.5 }));
+          addOb('shopper', x, oz, Object.assign(person(rng), { basket: rng() < 0.6, vx: moving ? (rng() < 0.5 ? -1 : 1) * (0.8 + rng() * 1.0) : 0, bounce: 2.5 }));
         } else if (kind === 'display' || kind === 'boxes') {
           addOb(kind, clamp(x, -2.2, 2.2), oz);
         } else addOb(kind, x, oz);
       }
-      if (rng() < 0.55) addItems(lanes[n] || 0, z + 4, 1 + Math.floor(rng() * 3));
-      return lerp(12, 8, diff) + rng() * 3;
+      const free = lanes[n] !== undefined ? lanes[n] : 0;
+      if (rng() < padChance) addPad(free, z - th.maxSpeed * 0.35);
+      else if (rng() < 0.6) addItems(free, z + 4, 1 + Math.floor(rng() * 3));
+      return th.maxSpeed * gapSec;
     }
 
     if (zone.type === 'street') {
       const lanes = shuffle(rng, [-2.4, -0.8, 0.8, 2.4]);
-      const n = 1 + (rng() < 0.3 + diff * 0.4 ? 1 : 0);
+      const n = 1 + (rng() < 0.35 + diff * 0.4 ? 1 : 0);
       for (let k = 0; k < n; k++) {
         const kind = pickWeighted(rng, { car: 34, bike: 12, cone: 18, barrier: 16, cat: 10, shopper: 10 });
         const x = lanes[k];
-        if (kind === 'car') addOb('car', (x < 0 ? -1.75 : 1.75) + (rng() - 0.5) * 0.4, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz: 4 + rng() * 4 });
-        else if (kind === 'bike') addOb('bike', x < 0 ? -2.6 : 2.6, z, Object.assign(person(rng), { vz: 3 + rng() * 1.5 }));
+        if (kind === 'car') addOb('car', (x < 0 ? -1.75 : 1.75) + (rng() - 0.5) * 0.4, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz: 8 + rng() * 6 });
+        else if (kind === 'bike') addOb('bike', x < 0 ? -2.6 : 2.6, z, Object.assign(person(rng), { vz: 5 + rng() * 2 }));
         else if (kind === 'barrier') addOb('barrier', clamp(x, -2.4, 2.4), z);
         else if (kind === 'cat') {
           const from = rng() < 0.5 ? -1 : 1;
-          addOb('cat', from * (th.roadW + 0.8), z, { vx: -from * (1.6 + rng() * 0.6), trigger: 24, active: false });
+          addOb('cat', from * (th.roadW + 0.8), z, { vx: -from * (2.4 + rng() * 0.8), trigger: 45, active: false });
         } else if (kind === 'shopper') addOb('shopper', x, z, Object.assign(person(rng), { basket: false, vx: 0 }));
         else {
           addOb('cone', x - 0.35, z);
           addOb('cone', x + 0.35, z + 0.6);
         }
       }
-      if (rng() < 0.5) addItems(lanes[n] || 0, z + 5, 1 + Math.floor(rng() * 3), 'coin');
-      return lerp(14, 10, diff) + rng() * 4;
+      const free = lanes[n] !== undefined ? lanes[n] : 0;
+      if (rng() < padChance) addPad(free, z - th.maxSpeed * 0.35);
+      else if (rng() < 0.55) addItems(free, z + 5, 1 + Math.floor(rng() * 3), 'coin');
+      return th.maxSpeed * gapSec;
     }
 
     // highway
     const lanes = shuffle(rng, [-3.33, 0, 3.33]);
-    const n = 1 + (rng() < 0.35 + diff * 0.35 ? 1 : 0);
+    const n = 1 + (rng() < 0.4 + diff * 0.35 ? 1 : 0);
     for (let k = 0; k < n; k++) {
       const x = lanes[k];
       const kind = pickWeighted(rng, { car: 50, truck: 25, cone: 25 });
-      if (kind === 'car') addOb('car', x + (rng() - 0.5) * 0.5, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz: 9 + rng() * 4 });
-      else if (kind === 'truck') addOb('truck', x, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz: 8 + rng() * 2 });
+      if (kind === 'car') addOb('car', x + (rng() - 0.5) * 0.5, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz: 16 + rng() * 8 });
+      else if (kind === 'truck') addOb('truck', x, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz: 14 + rng() * 4 });
       else {
         const dir = rng() < 0.5 ? -1 : 1;
-        for (let c = 0; c < 4; c++) addOb('cone', x - dir * 1.1 + dir * c * 0.7, z + c * 1.2);
+        for (let c = 0; c < 4; c++) addOb('cone', x - dir * 1.1 + dir * c * 0.7, z + c * 1.4);
       }
     }
-    if (rng() < 0.5) addItems(lanes[n] || 0, z + 6, 2 + Math.floor(rng() * 3), 'coin');
-    return lerp(20, 14, diff) + rng() * 5;
+    const free = lanes[n] !== undefined ? lanes[n] : 0;
+    if (rng() < padChance + 0.05) addPad(free, z - th.maxSpeed * 0.35);
+    else if (rng() < 0.55) addItems(free, z + 6, 2 + Math.floor(rng() * 3), 'coin');
+    return th.maxSpeed * gapSec;
   }
 
   function spawnAhead() {
@@ -291,6 +315,8 @@
       setText('hits', `ミス ${G.hits}`);
     }
     setText('score', String(Math.floor(G.score)));
+    setText('speed', String(Math.round(P.speed * 3.6)));
+    $('app').classList.toggle('boosting', G.boost > 0);
     const pct = clamp(P.z / G.stage.length, 0, 1) * 100;
     $('progress-fill').style.width = pct + '%';
     $('progress-cart').style.left = pct + '%';
@@ -309,7 +335,7 @@
   window.addEventListener('resize', resize);
 
   function resetPlayer() {
-    G.player = { x: 0, z: 0, speed: 0, vx: 0, steer: 0, phase: 0 };
+    G.player = { x: 0, tx: 0, z: 0, prevZ: 0, speed: 0, vx: 0, steer: 0, phase: 0 };
     G.camX = 0;
   }
 
@@ -318,6 +344,8 @@
     G.stage = STAGES[0];
     G.obstacles = [];
     G.items = [];
+    G.pads = [];
+    G.boost = 0;
     G.particles = [];
     G.floaters = [];
     G.cpIndex = 0;
@@ -337,9 +365,15 @@
       stage: st,
       obstacles: [],
       items: [],
+      pads: [],
       particles: [],
       floaters: [],
-      nextSpawn: 40,
+      nextSpawn: 60,
+      boost: 0,
+      boosts: 0,
+      combo: 0,
+      comboTimer: 0,
+      nearMisses: 0,
       timeLeft: st.startTime,
       elapsed: 0,
       penalty: 0,
@@ -364,11 +398,8 @@
     showScreen(null);
     setHud(true);
     showZone(`STAGE ${st.no}  ${st.name}`);
-    if (isTouchDevice()) {
-      const hint = $('touch-hint');
-      hint.classList.remove('hidden');
-      setTimeout(() => hint.classList.add('hidden'), 3500);
-    }
+    $('drag-hint').classList.remove('hidden');
+    $('drag-hint-sub').classList.toggle('hidden', isTouchDevice());
   }
 
   function onHit(o) {
@@ -379,7 +410,10 @@
     G.invuln = 1.6;
     G.shake = 0.35;
     P.speed *= 0.15;
+    G.boost = 0;
+    G.combo = 0;
     sfx.hit();
+    haptics.vibrate(120);
     flash();
     burst(['#ffd166', '#ffffff', '#ff6b6b'], 14);
     if (G.mode === 'normal') {
@@ -393,9 +427,21 @@
     }
   }
 
+  function nearMiss() {
+    G.combo = G.comboTimer > 0 ? G.combo + 1 : 1;
+    G.comboTimer = 2.5;
+    G.nearMisses++;
+    const pts = 50 * G.combo;
+    G.score += pts;
+    sfx.nearMiss(G.combo);
+    haptics.vibrate(15);
+    floater(G.combo > 1 ? `ギリギリ! x${G.combo}  +${pts}` : `ギリギリ! +${pts}`, '#2ec4b6');
+  }
+
   function passCheckpoint() {
     const i = G.cpIndex++;
     sfx.checkpoint();
+    haptics.vibrate([30, 40, 30]);
     G.score += 500;
     burst(['#ff8c42', '#ffd166', '#2ec4b6', '#ffffff'], 26);
     if (G.mode === 'normal') {
@@ -419,7 +465,9 @@
   function reachGoal() {
     G.state = 'goal';
     G.endTimer = 2.4;
+    G.boost = 0;
     sfx.goal();
+    haptics.vibrate([40, 60, 40, 60, 80]);
     burst(['#ff8c42', '#ffd166', '#2ec4b6', '#ef476f', '#ffffff'], 50);
     banner('GOAL!', 'goal', G.stage.goalLabel + 'に到着！');
   }
@@ -428,7 +476,9 @@
     G.state = 'over';
     G.overReason = reason;
     G.endTimer = 1.8;
+    G.boost = 0;
     sfx.over();
+    haptics.vibrate(300);
     banner(reason === 'time' ? 'TIME UP' : 'GAME OVER', 'over');
   }
 
@@ -458,6 +508,7 @@
       }
       if (G.countdown <= 0) {
         G.state = 'run';
+        $('drag-hint').classList.add('hidden');
         banner('GO!', 'go');
         sfx.go();
       }
@@ -470,29 +521,30 @@
       G.zone = zone;
     }
 
+    const dragPx = input.consumeDragX();
     if (G.state === 'run') {
-      const ax = input.axisX();
-      P.vx += (ax * th.steer - P.vx) * Math.min(1, dt * 9);
-      P.x += P.vx * dt;
-      if (P.x < -th.limit) {
-        P.x = -th.limit;
-        P.vx = Math.max(0, P.vx);
-      }
-      if (P.x > th.limit) {
-        P.x = th.limit;
-        P.vx = Math.min(0, P.vx);
-      }
-      if (input.down('ArrowDown', 'KeyS')) P.speed = Math.max(3, P.speed - 18 * dt);
-      else if (P.speed < th.maxSpeed) P.speed = Math.min(th.maxSpeed, P.speed + th.accel * dt);
-      else P.speed = Math.max(th.maxSpeed, P.speed - 8 * dt);
+      // 指でなぞった分だけ目標位置を動かす（画面上の指の動き ≒ カートの動き）
+      P.tx += (dragPx * 1.15) / Render.view.k;
+      P.tx += input.axisX() * th.steer * dt; // PC確認用のキーボード
+      P.tx = clamp(P.tx, -th.limit, th.limit);
+      const prevX = P.x;
+      const maxStep = 18 * dt;
+      P.x += clamp((P.tx - P.x) * Math.min(1, dt * 20), -maxStep, maxStep);
+      P.vx = (P.x - prevX) / Math.max(dt, 1e-4);
+
+      const top = G.boost > 0 ? th.maxSpeed * BOOST.multiplier : th.maxSpeed;
+      if (P.speed < top) P.speed = Math.min(top, P.speed + (G.boost > 0 ? th.accel * 3 : th.accel) * dt);
+      else P.speed = Math.max(top, P.speed - 10 * dt);
     } else if (G.state === 'goal' || G.state === 'over') {
       P.speed = Math.max(0, P.speed - 10 * dt);
       P.vx *= 0.9;
       P.x += P.vx * dt;
     }
+    P.prevZ = P.z;
     P.z += P.speed * dt;
-    P.phase += P.speed * dt * 1.3;
-    P.steer += (P.vx / th.steer - P.steer) * Math.min(1, dt * 10);
+    P.phase += Math.min(P.speed, 20) * dt * 1.3;
+    P.steer += (clamp(P.vx / 10, -1, 1) - P.steer) * Math.min(1, dt * 10);
+    G.boost = Math.max(0, G.boost - dt);
 
     if (G.state === 'run' || G.state === 'countdown') spawnAhead();
 
@@ -520,19 +572,31 @@
     }
     G.obstacles = G.obstacles.filter((o) => o.z + o.len > P.z - CAM_BACK - 2 && Math.abs(o.x) < 12);
     G.items = G.items.filter((it) => !it.taken && it.z > P.z - CAM_BACK - 2);
+    G.pads = G.pads.filter((pd) => pd.z + pd.len > P.z - CAM_BACK - 2);
 
     if (G.state === 'run') {
+      // 高速でもすり抜けないよう、前フレームから今フレームまでの区間で判定する
       const cz = P.z + 0.6;
-      if (G.invuln <= 0) {
-        for (const o of G.obstacles) {
-          if (!o.hit && Math.abs(o.z - cz) < o.len / 2 + 0.75 && Math.abs(o.x - P.x) < o.w + 0.38) {
+      const pz = P.prevZ + 0.6;
+      for (const o of G.obstacles) {
+        if (o.hit) continue;
+        const reach = o.len / 2 + 0.75;
+        const inZ = o.z + reach >= pz && o.z - reach <= cz;
+        const clearance = Math.abs(o.x - P.x) - (o.w + 0.38);
+        if (inZ) {
+          if (clearance < 0 && G.invuln <= 0) {
             onHit(o);
             break;
           }
+          o.minClr = Math.min(o.minClr === undefined ? 99 : o.minClr, clearance);
+        } else if (o.minClr !== undefined && !o.nmDone && o.z + reach < cz) {
+          // すれすれで避けた
+          o.nmDone = true;
+          if (o.minClr >= 0 && o.minClr < 0.45 && G.invuln <= 0) nearMiss();
         }
       }
       for (const it of G.items) {
-        if (!it.taken && Math.abs(it.z - cz) < 1.0 && Math.abs(it.x - P.x) < 0.75) {
+        if (!it.taken && it.z + 1.0 >= pz && it.z - 1.0 <= cz && Math.abs(it.x - P.x) < 0.75) {
           it.taken = true;
           G.itemsTaken++;
           G.score += 100;
@@ -540,7 +604,21 @@
           floater('+100', '#3bb273');
         }
       }
+      for (const pd of G.pads) {
+        if (!pd.used && pd.z + pd.len / 2 >= pz && pd.z - pd.len / 2 <= cz && Math.abs(pd.x - P.x) < pd.w + 0.3) {
+          pd.used = true;
+          G.boost = BOOST.duration;
+          G.boosts++;
+          G.score += 50;
+          P.speed = Math.max(P.speed, th.maxSpeed * 1.2);
+          sfx.boost();
+          haptics.vibrate(40);
+          floater('BOOST!', '#ff8c1a');
+        }
+      }
     }
+    G.comboTimer = Math.max(0, G.comboTimer - dt);
+    if (G.comboTimer <= 0) G.combo = 0;
 
     if (G.state === 'run') {
       G.elapsed += dt;
@@ -570,7 +648,7 @@
 
     G.invuln = Math.max(0, G.invuln - dt);
     G.shake = Math.max(0, G.shake - dt);
-    G.camX = (G.camX || 0) + (P.x * 0.6 - (G.camX || 0)) * Math.min(1, dt * 6);
+    G.camX = (G.camX || 0) + (P.x * 0.85 - (G.camX || 0)) * Math.min(1, dt * 8);
     Render.setCamera(G.camX, P.z - CAM_BACK);
     updateEffects(dt);
   }
@@ -654,7 +732,7 @@
         const hpBonus = G.hp * 1000;
         const total = Math.floor(G.score) + timeBonus + hpBonus;
         rows = [
-          ['走行＋アイテム', Math.floor(G.score).toLocaleString()],
+          ['走行・アイテム・ギリギリ', Math.floor(G.score).toLocaleString()],
           [`残りタイム ${G.timeLeft.toFixed(1)}秒`, '+' + timeBonus.toLocaleString()],
           [`残りHP ${G.hp}`, '+' + hpBonus.toLocaleString()],
           ['合計スコア', total.toLocaleString(), 'total'],
@@ -694,6 +772,10 @@
       headline = 'FINISH!';
       sub = `${st.goalLabel}に到着！`;
     }
+    rows = [
+      ['ギリギリ回避', `${G.nearMisses}回`],
+      ['加速パネル', `${G.boosts}回`],
+    ].concat(rows);
     storage.set(REC_KEY, records);
 
     $('result-head').textContent = headline;
@@ -755,6 +837,8 @@
 
   function updateSoundButton() {
     $('btn-sound').textContent = audio.muted ? '🔇 サウンド OFF' : '🔊 サウンド ON';
+    $('btn-vibe').textContent = haptics.enabled ? '📳 振動 ON' : '📴 振動 OFF';
+    $('btn-vibe').classList.toggle('hidden', !haptics.supported || !isTouchDevice());
   }
 
   document.querySelectorAll('[data-mode]').forEach((b) =>
@@ -779,6 +863,11 @@
     sfx.click();
     updateSoundButton();
   });
+  $('btn-vibe').addEventListener('click', () => {
+    haptics.setEnabled(!haptics.enabled);
+    haptics.vibrate(30);
+    updateSoundButton();
+  });
   $('btn-pause').addEventListener('click', pause);
   $('btn-resume').addEventListener('click', resume);
   $('btn-restart').addEventListener('click', () => startStage(G.stageIdx, G.mode));
@@ -800,6 +889,8 @@
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
 
+    // スマホを横向きにしたら一時停止（縦専用）
+    if (isTouchDevice() && window.innerWidth > window.innerHeight) pause();
     if (input.wasPressed('Escape', 'KeyP')) {
       if (G.state === 'paused') resume();
       else pause();

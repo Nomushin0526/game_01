@@ -35,6 +35,67 @@ body {
 
 button {
   font-family: inherit;
+  touch-action: manipulation; /* ダブルタップでの拡大を防ぐ */
+}
+
+/* ---------- スマホ縦画面のゲーム枠 ----------
+   スマホでは画面いっぱい、PCでは中央に縦長の枠として表示する。
+   中の要素は cqw / cqh（枠の幅・高さに対する%）でサイズを決められる。 */
+.app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0 auto;
+  overflow: hidden;
+  container-type: size;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+@media (min-aspect-ratio: 2/3) {
+  .app {
+    width: min(100vw, calc(100dvh * 0.5));
+    box-shadow: 0 0 0 4px var(--line), 0 24px 60px rgba(0, 0, 0, 0.35);
+  }
+}
+body.app-body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 209, 102, 0.25) 0, transparent 40%),
+    radial-gradient(circle at 80% 80%, rgba(46, 196, 182, 0.25) 0, transparent 40%),
+    #3a3d56;
+}
+
+/* スマホを横にしたときの案内（縦専用） */
+.rotate-notice {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  background: var(--paper);
+  text-align: center;
+  font-weight: 900;
+  font-size: 20px;
+}
+.rotate-notice .icon {
+  font-size: 56px;
+  animation: rotate-hint 1.6s ease-in-out infinite;
+}
+@keyframes rotate-hint {
+  0%, 30% { transform: rotate(-90deg); }
+  60%, 100% { transform: rotate(0deg); }
+}
+@media (orientation: landscape) and (pointer: coarse) {
+  .rotate-notice {
+    display: grid;
+  }
 }
 
 .panel {

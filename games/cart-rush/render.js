@@ -4,12 +4,12 @@
   'use strict';
 
   const SEG = 2; // 床を区切る長さ
-  const DRAW = 90; // 描画距離
-  const CAM_BACK = 4; // プレイヤーの何m後ろにカメラを置くか
-  const CEIL = 6.6; // スーパーの天井の高さ
+  const DRAW = 95; // 描画距離
+  const CAM_BACK = 7; // プレイヤーの何m後ろにカメラを置くか（遠くを大きめに見せる）
+  const CEIL = 9.5; // スーパーの天井の高さ
   const THEMES = window.CartThemes;
 
-  const R = { W: 0, H: 0, f: 1, hz: 0, camY: 3.2, camX: 0, camZ: 0, fog: '#efe9dc' };
+  const R = { W: 0, H: 0, f: 1, k: 1, hz: 0, camY: 3.2, camX: 0, camZ: 0, fog: '#efe9dc' };
   let ctx = null;
 
   // ---------- 小物ユーティリティ ----------
@@ -152,13 +152,17 @@
   function setContext(c) {
     ctx = c;
   }
+  // 縦長のスマホ画面を前提にカメラを決める
+  //   k: プレイヤー位置での「1m = 何px」。スーパーの通路が画面幅に収まるようにする
+  //   プレイヤーを画面の下 76% あたり、地平線を上 40% あたりに置く
   function setView(W, H) {
     R.W = W;
     R.H = H;
-    R.f = Math.min(0.72 * H, 0.62 * W);
-    // 縦長画面では空・天井ばかりにならないよう、カメラを高くして見下ろし気味にする
-    R.camY = clamp(((0.86 * H - 0.4 * H) * CAM_BACK) / R.f, 3.2, 6.0);
-    R.hz = 0.86 * H - (R.camY * R.f) / CAM_BACK;
+    R.k = (0.42 * W) / THEMES.market.roadW;
+    R.f = R.k * CAM_BACK;
+    const playerY = 0.76 * H;
+    R.camY = clamp((playerY - 0.4 * H) / R.k, 3.2, 8.5);
+    R.hz = playerY - R.camY * R.k;
   }
   function setCamera(x, z) {
     R.camX = x;
@@ -228,7 +232,241 @@
   }
 
   // ---------- 床・壁（区間ごと） ----------
-  const PRODUCT_COLORS = ['#f4f1ea', '#e85d5d', '#5aa0e0', '#f5c542', '#7bc66b', '#b07ad6', '#ff9f5a', '#ffffff'];
+  // 商品棚: コーナーごとの商品ラインナップ（[種類, 色] の組）
+  const SHELF_SETS = {
+    produce: {
+      back: '#eef3e6',
+      items: [
+        ['crate', '#e74c3c'], // りんご
+        ['crate', '#ff9f1a'], // みかん
+        ['crate', '#7bc043'], // キャベツ
+        ['crate', '#f5d142'], // レモン
+        ['crate', '#8e5bb5'], // なす
+        ['leek', '#4caf50'],
+      ],
+    },
+    fresh: {
+      back: '#e3eef5',
+      items: [
+        ['pack', '#e2646b'], // 牛肉
+        ['pack', '#f19a9a'], // 豚肉
+        ['pack', '#f3c4a8'], // 鶏肉
+        ['pack', '#9fb7c9'], // 魚
+        ['pack', '#f08a5d'], // 鮭
+        ['eggs', '#fff3dc'],
+      ],
+    },
+    daily: {
+      back: '#eef0f4',
+      items: [
+        ['bottle', '#4a90d9'],
+        ['bottle', '#f28dbb'],
+        ['bottle', '#7bc66b'],
+        ['bottle', '#ffffff'],
+        ['tissue', '#5fa4e6'],
+        ['roll', '#f28dbb'],
+      ],
+    },
+    snack: {
+      back: '#f6efe3',
+      items: [
+        ['bag', '#e84a4a'],
+        ['bag', '#f5c542'],
+        ['bag', '#4a90d9'],
+        ['bag', '#7bc66b'],
+        ['box', '#b07ad6'],
+        ['box', '#ff9f43'],
+        ['can', '#e84a4a'],
+        ['jar', '#ff6fa8'],
+      ],
+    },
+  };
+  const FAR_PALETTE = ['#f4f1ea', '#e85d5d', '#5aa0e0', '#f5c542', '#7bc66b', '#b07ad6', '#ff9f5a', '#ffffff'];
+  const SHELF_H = 4.2; // 棚の高さ
+  const ROWS = 5; // 段数
+  const ROW_STEP = 0.76;
+
+  // 棚の1マスに商品を1つ描く。x は棚の面、side は -1(左) / 1(右)、y0 は段の底
+  function drawProduct(type, col, x, side, y0, za, zb, seed, F) {
+    const L = zb - za;
+    const zc = (za + zb) / 2;
+    const fx = x - side * 0.12; // 棚から少し手前（通路側）
+    switch (type) {
+      case 'crate': {
+        wall(x, y0, y0 + 0.2, za, zb, F('#b07a45'));
+        wall(x, y0 + 0.08, y0 + 0.1, za, zb, F('#8a5a30'));
+        const big = col === '#7bc043';
+        const n = big ? 2 : 3;
+        for (let k = 0; k < n; k++) {
+          const p = project(fx, y0 + (big ? 0.32 : 0.27), za + (L * (k + 0.5)) / n);
+          if (p) {
+            circle(p.x, p.y, (big ? 0.15 : 0.1) * p.s, F(col));
+            circle(p.x - 0.03 * p.s, p.y - 0.03 * p.s, 0.03 * p.s, 'rgba(255,255,255,0.45)');
+          }
+        }
+        if (!big) {
+          for (let k = 0; k < 2; k++) {
+            const p = project(fx, y0 + 0.42, za + (L * (k + 1)) / 3);
+            if (p) circle(p.x, p.y, 0.1 * p.s, F(shade(col, -0.08)));
+          }
+        }
+        break;
+      }
+      case 'leek':
+        for (let k = 0; k < 3; k++) {
+          const a = za + 0.04 + k * (L / 3);
+          const b = a + L / 3 - 0.06;
+          wall(x, y0, y0 + 0.24, a, b, F('#f4f7ee'));
+          wall(x, y0 + 0.24, y0 + 0.58, a + 0.01, b - 0.01, F(col));
+        }
+        wall(x, y0 + 0.16, y0 + 0.21, za, zb, F('#e84a4a'));
+        break;
+      case 'pack':
+        for (let k = 0; k < 2; k++) {
+          const yb = y0 + k * 0.2;
+          wall(x, yb, yb + 0.17, za + 0.01, zb - 0.01, F('#f7f7f7'));
+          wall(x, yb + 0.03, yb + 0.13, za + 0.05, zb - 0.05, F(shade(col, k * 0.1)));
+          wall(x, yb + 0.04, yb + 0.07, za + 0.08, za + 0.2, F('#ffffff'));
+          wall(x, yb + 0.09, yb + 0.15, zb - 0.2, zb - 0.06, F('#ffd23f'));
+        }
+        break;
+      case 'eggs':
+        for (let k = 0; k < 2; k++) {
+          const yb = y0 + k * 0.2;
+          wall(x, yb, yb + 0.16, za + 0.01, zb - 0.01, F('#dfe6ea'));
+          for (let e = 0; e < 3; e++) {
+            const p = project(fx * 0.98 + x * 0.02, yb + 0.08, za + (L * (e + 0.5)) / 3);
+            if (p) ellipse(p.x, p.y, 0.05 * p.s, 0.065 * p.s, F(col));
+          }
+        }
+        break;
+      case 'bottle':
+        for (let k = 0; k < 2; k++) {
+          const a = za + k * (L / 2) + 0.02;
+          const b = a + L / 2 - 0.04;
+          const w = b - a;
+          wall(x, y0, y0 + 0.36, a, b, F(col));
+          wall(x, y0 + 0.36, y0 + 0.45, a + w * 0.2, b - w * 0.2, F(col));
+          wall(x, y0 + 0.45, y0 + 0.53, a + w * 0.3, b - w * 0.3, F(col === '#ffffff' ? '#4a90d9' : '#ffffff'));
+          wall(x, y0 + 0.1, y0 + 0.24, a, b, F(col === '#ffffff' ? '#7bc66b' : '#ffffff'));
+          wall(x, y0 + 0.14, y0 + 0.2, a + w * 0.2, b - w * 0.2, F(shade(col, -0.35)));
+        }
+        break;
+      case 'tissue':
+        for (let k = 0; k < 2; k++) {
+          const yb = y0 + k * 0.24;
+          wall(x, yb, yb + 0.22, za + 0.01, zb - 0.01, F('#ffffff'));
+          wall(x, yb + 0.03, yb + 0.1, za + 0.01, zb - 0.01, F(col));
+          wall(x, yb + 0.15, yb + 0.19, za + 0.15, zb - 0.15, F('#d6e4f0'));
+        }
+        break;
+      case 'roll':
+        wall(x, y0, y0 + 0.52, za + 0.01, zb - 0.01, F('#fbfbfb'));
+        wall(x, y0 + 0.3, y0 + 0.4, za + 0.01, zb - 0.01, F(col));
+        for (let k = 1; k < 3; k++) wall(x, y0, y0 + 0.52, za + (L * k) / 3 - 0.01, za + (L * k) / 3 + 0.01, F('#e3e3e3'));
+        break;
+      case 'bag': {
+        const top = y0 + 0.46 + seed * 0.06;
+        poly(
+          [project(x, y0, za + 0.02), project(x, top, za + 0.06), project(x, top, zb - 0.06), project(x, y0, zb - 0.02)],
+          F(col)
+        );
+        wall(x, top - 0.05, top + 0.02, za + 0.06, zb - 0.06, F(shade(col, 0.35)));
+        const p = project(fx * 0.3 + x * 0.7, y0 + 0.22, zc);
+        if (p) {
+          circle(p.x, p.y, 0.09 * p.s, F('#ffffff'));
+          circle(p.x, p.y, 0.05 * p.s, F(shade(col, -0.2)));
+        }
+        wall(x, y0 + 0.05, y0 + 0.1, za + 0.08, zb - 0.08, F(shade(col, -0.25)));
+        break;
+      }
+      case 'box': {
+        const h = 0.4 + seed * 0.12;
+        wall(x, y0, y0 + h, za + 0.01, zb - 0.01, F(col));
+        wall(x, y0 + h * 0.45, y0 + h * 0.75, za + 0.05, zb - 0.05, F('#ffffff'));
+        wall(x, y0 + h * 0.52, y0 + h * 0.68, za + 0.09, za + 0.22, F(shade(col, -0.3)));
+        wall(x, y0 + h * 0.1, y0 + h * 0.18, za + 0.05, zb - 0.05, F(shade(col, 0.3)));
+        break;
+      }
+      case 'can':
+        for (let k = 0; k < 3; k++) {
+          const a = za + k * (L / 3) + 0.015;
+          const b = a + L / 3 - 0.03;
+          for (let s = 0; s < 2; s++) {
+            const yb = y0 + s * 0.25;
+            wall(x, yb, yb + 0.23, a, b, F(k % 2 ? shade(col, 0.15) : col));
+            wall(x, yb + 0.19, yb + 0.23, a, b, F('#c9cfd4'));
+            wall(x, yb + 0.07, yb + 0.12, a, b, F('#ffffff'));
+          }
+        }
+        break;
+      case 'jar':
+        wall(x, y0, y0 + 0.42, za + 0.04, zb - 0.04, F('#e2f0f6'));
+        wall(x, y0 + 0.42, y0 + 0.5, za + 0.06, zb - 0.06, F(col));
+        for (let k = 0; k < 4; k++) {
+          const p = project(fx * 0.4 + x * 0.6, y0 + 0.08 + (k % 2) * 0.16 + 0.04, za + L * (0.25 + (k >> 1) * 0.45));
+          if (p) circle(p.x, p.y, 0.05 * p.s, F(FAR_PALETTE[(k * 3 + 1) % FAR_PALETTE.length]));
+        }
+        break;
+      default:
+        wall(x, y0, y0 + 0.5, za, zb, F(col));
+    }
+  }
+
+  function drawShelfSide(zone, i, side, z0, z1, F, near) {
+    const RW = THEMES.market.roadW;
+    const x = side * RW;
+    const set = SHELF_SETS[zone.shelf] || SHELF_SETS.snack;
+    // 棚の天板と、その向こうに並ぶ別の通路の棚（上から見える）
+    flat(x, x + side * 1.4, SHELF_H, z0, z1, F('#8e979f'));
+    flat(x + side * 1.4, x + side * 2.2, SHELF_H - 0.6, z0, z1, F('#d8d1c2'));
+    flat(x + side * 2.2, x + side * 3.6, SHELF_H, z0, z1, F(i % 2 ? '#a7afb6' : '#9ea6ad'));
+    flat(x + side * 3.6, x + side * 16, SHELF_H - 0.6, z0, z1, F('#cfc7b7'));
+    // 天板の上のストック段ボール
+    if (near && hash(i, side, 77) < 0.35) {
+      const bx = x + side * 0.3;
+      box(Math.min(bx, bx + side * 0.9), Math.max(bx, bx + side * 0.9), SHELF_H, SHELF_H + 0.45, i * SEG + 0.2, i * SEG + 1.2, '#c9965c', '#ddb27a', '#a97a45');
+    }
+    // 背板と足元
+    wall(x, 0, SHELF_H, z0, z1, F(set.back));
+    wall(x, 0, 0.2, z0, z1, F('#5f6970'));
+    // 一番上にコーナーカラーの帯
+    wall(x, SHELF_H - 0.18, SHELF_H, z0, z1, F(zone.tint));
+
+    const zs = i * SEG;
+    for (let r = 0; r < ROWS; r++) {
+      const yb = 0.2 + r * ROW_STEP;
+      if (!near) {
+        for (let b = 0; b < 2; b++) {
+          const za = Math.max(z0, zs + b);
+          const zb = zs + b + 0.94;
+          if (zb <= za) continue;
+          const h = hash(i, side * 7 + r, b);
+          const col = h < 0.4 ? zone.tint : FAR_PALETTE[Math.floor(hash(i, r, b + side * 3) * FAR_PALETTE.length)];
+          wall(x, yb, yb + 0.5, za, zb, F(col));
+        }
+      } else {
+        for (let k = 0; k < 4; k++) {
+          let za = zs + k * 0.5 + 0.02;
+          const zb = za + 0.46;
+          if (zb <= R.camZ + 0.35) continue;
+          za = Math.max(za, R.camZ + 0.35);
+          // 同じ商品を2つずつ並べる（フェイス）
+          const pick = set.items[Math.floor(hash(i * 2 + (k >> 1), side * 11 + r, 5) * set.items.length)];
+          drawProduct(pick[0], pick[1], x, side, yb, za, zb, hash(i, k, r), F);
+        }
+      }
+      // 棚板と値札
+      wall(x, yb - 0.09, yb, z0, z1, F('#7d868e'));
+      wall(x, yb - 0.075, yb - 0.02, z0, z1, F('#fbf6e6'));
+      if (near) {
+        for (let k = 0; k < 2; k++) {
+          const zc = zs + k + 0.5;
+          if (zc - 0.1 > R.camZ + 0.35) wall(x, yb - 0.07, yb - 0.025, zc - 0.1, zc + 0.1, F(k % 2 ? '#ffd23f' : '#ff6b6b'));
+        }
+      }
+    }
+  }
 
   function drawSegment(zone, i, z0, z1) {
     const dz = (z0 + z1) / 2 - R.camZ;
@@ -238,31 +476,14 @@
     const RW = th.roadW;
 
     if (zone.type === 'market') {
-      const SH = 2.5;
-      flat(-RW - 2, RW + 2, CEIL, z0, z1, F(i % 2 ? '#d9dcdf' : '#d1d5d9'));
-      if (i % 4 === 0) flat(-0.7, 0.7, CEIL, z0 + 0.4, z1 - 0.4, F('#fffbe8'));
+      flat(-RW - 16, RW + 16, CEIL, z0, z1, F(i % 2 ? '#d9dcdf' : '#d1d5d9'));
+      if (i % 4 === 0) flat(-0.8, 0.8, CEIL, z0 + 0.4, z1 - 0.4, F('#fffbe8'));
       flat(-RW, RW, 0, z0, z1, F(i % 2 ? '#ede8dd' : '#e1dbce'));
       if (i % 2 === 0) flat(-0.05, 0.05, 0, z0, z1, F('#d3ccbd'));
-      for (const side of [-1, 1]) {
-        const x = side * RW;
-        flat(x, x + side * 1.4, SH, z0, z1, F('#8e979f'));
-        wall(x, 0, SH, z0, z1, F('#aeb7bf'));
-        wall(x, 0, 0.22, z0, z1, F('#68727b'));
-        for (let r = 0; r < 3; r++) {
-          const y0 = 0.32 + r * 0.74;
-          const y1 = y0 + 0.56;
-          for (let b = 0; b < 2; b++) {
-            const za = z0 + ((z1 - z0) * b) / 2;
-            const zb = za + (z1 - z0) / 2 - 0.06;
-            const hsh = hash(i, side * 7 + r, b);
-            const col = hsh < 0.42 ? zone.tint : PRODUCT_COLORS[Math.floor(hash(i, r, b + side * 3) * PRODUCT_COLORS.length)];
-            wall(x, y0, y1, za, zb, F(col));
-            wall(x, y0, y0 + 0.08, za, zb, F(shade(col, -0.25)));
-          }
-          // 値札の帯
-          wall(x, y0 - 0.06, y0, z0, z1, F('#fdf7e3'));
-        }
-      }
+      const near = dz < 36;
+      // 視点に近い側の棚を後から描く（カメラが右寄りなら左の棚が手前に見える）
+      const order = R.camX > 0 ? [1, -1] : [-1, 1];
+      for (const side of order) drawShelfSide(zone, i, side, z0, z1, F, near);
       return;
     }
 
@@ -856,6 +1077,37 @@
     }
   }
 
+  // 加速パネル（床に貼られた矢印）
+  function drawPad(it, t) {
+    const x0 = it.x - it.w;
+    const x1 = it.x + it.w;
+    const z0 = Math.max(it.z - it.len / 2, R.camZ + 0.35);
+    const z1 = it.z + it.len / 2;
+    if (z1 <= z0) return;
+    const glow = 0.5 + Math.sin(t * 10) * 0.5;
+    flat(x0 - 0.08, x1 + 0.08, 0.01, z0, z1, it.used ? '#b9a27a' : mix('#ff7a00', '#ffd23f', glow * 0.5));
+    flat(x0 + 0.05, x1 - 0.05, 0.012, z0 + 0.05, z1 - 0.05, it.used ? '#8f8f8f' : '#2b2d42');
+    const n = 3;
+    const step = it.len / n;
+    for (let k = 0; k < n; k++) {
+      const zc = it.z - it.len / 2 + ((k + (t * 2.2) % 1) % n) * step;
+      const za = zc;
+      if (za < z0 || za + 0.7 > z1) continue;
+      const y = 0.015;
+      poly(
+        [
+          project(x0 + 0.1, y, za),
+          project(it.x, y, za + 0.5),
+          project(x1 - 0.1, y, za),
+          project(x1 - 0.1, y, za + 0.22),
+          project(it.x, y, za + 0.72),
+          project(x0 + 0.1, y, za + 0.22),
+        ],
+        it.used ? '#cfcfcf' : '#ffd23f'
+      );
+    }
+  }
+
   function drawHouse(it) {
     const x = it.x;
     const z0 = it.z;
@@ -931,8 +1183,8 @@
   }
 
   function drawCornerSign(it) {
-    const a = project(-1.4, 3.75, it.z);
-    const b = project(1.4, 3.15, it.z);
+    const a = project(-1.6, 5.4, it.z);
+    const b = project(1.6, 4.7, it.z);
     const c = project(0, CEIL, it.z);
     if (!a || !b || !c) return;
     ctx.strokeStyle = '#8e979f';
@@ -1050,6 +1302,8 @@
         return drawCat(it, t);
       case 'item':
         return drawItem(it, t);
+      case 'pad':
+        return drawPad(it, t);
       case 'house':
         return drawHouse(it);
       case 'tree':
@@ -1099,8 +1353,10 @@
 
     for (const o of G.obstacles) list.push(o);
     for (const it of G.items) if (!it.taken) list.push(it);
+    for (const pd of G.pads || []) list.push(pd);
     if (G.showPlayer !== false) list.push({ kind: 'player', z: P.z + 0.5 });
-    list.sort((a, b) => b.z - a.z);
+    const key = (o) => (o.kind === 'pad' ? o.z + o.len / 2 : o.z);
+    list.sort((a, b) => key(b) - key(a));
 
     for (const it of list) {
       const dz = it.z - R.camZ;
@@ -1124,20 +1380,24 @@
     }
     ctx.globalAlpha = 1;
 
-    // スピード線
+    // スピード線（最高速付近・加速中）
     const th = THEMES[zoneAt(stage, P.z).type];
     const sp = P.speed / th.maxSpeed;
-    if (sp > 0.9 && th.maxSpeed >= 16) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = 2;
+    if (sp > 0.85 || G.boost > 0) {
+      const boosting = G.boost > 0;
+      const n = boosting ? 26 : 12;
+      ctx.strokeStyle = boosting ? 'rgba(255,230,150,0.75)' : 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = boosting ? 3 : 2;
       ctx.beginPath();
-      for (let k = 0; k < 10; k++) {
-        const a = hash(k, Math.floor(t * 12), 3) * Math.PI * 2;
-        const r0 = R.H * (0.45 + hash(k, Math.floor(t * 12), 4) * 0.2);
-        const cx = R.W / 2;
-        const cy = R.hz;
-        ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0 * 0.7);
-        ctx.lineTo(cx + Math.cos(a) * (r0 + 70), cy + Math.sin(a) * (r0 + 70) * 0.7);
+      const cx = R.W / 2;
+      const cy = R.hz + (R.H - R.hz) * 0.15;
+      const fr = Math.floor(t * 20);
+      for (let k = 0; k < n; k++) {
+        const a = hash(k, fr, 3) * Math.PI * 2;
+        const r0 = R.H * (0.32 + hash(k, fr, 4) * 0.25);
+        const len = boosting ? 110 : 60;
+        ctx.moveTo(cx + Math.cos(a) * r0 * 0.6, cy + Math.sin(a) * r0);
+        ctx.lineTo(cx + Math.cos(a) * (r0 + len) * 0.6, cy + Math.sin(a) * (r0 + len));
       }
       ctx.stroke();
     }
