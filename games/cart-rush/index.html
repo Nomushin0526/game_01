@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>カートラッシュ！</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../shared/ui.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="game" aria-label="ゲーム画面"></canvas>
+
+    <!-- プレイ中の表示 -->
+    <div id="hud" class="hud hidden">
+      <div class="hud-top">
+        <div class="hud-left">
+          <div id="hearts" class="hearts" aria-label="HP"></div>
+          <div id="hits" class="chip hidden"></div>
+        </div>
+        <div class="hud-center">
+          <div id="timer-label" class="timer-label">のこり時間</div>
+          <div id="timer" class="timer">30.0</div>
+        </div>
+        <div class="hud-right">
+          <div class="chip"><span class="score-label">SCORE </span><b id="score">0</b></div>
+          <button id="btn-pause" class="icon-btn" aria-label="一時停止">❚❚</button>
+        </div>
+      </div>
+      <div class="progress" aria-hidden="true">
+        <div id="progress-fill" class="progress-fill"></div>
+        <div id="progress-ticks" class="progress-ticks"></div>
+        <div class="progress-goal">🏁</div>
+        <div id="progress-cart" class="progress-cart">🛒</div>
+      </div>
+      <div id="zone-label" class="zone-label"></div>
+      <div id="banner" class="banner"></div>
+      <div id="touch-hint" class="touch-hint hidden">
+        <span>◀ 左側をタッチ</span><span>右側をタッチ ▶</span>
+      </div>
+      <div id="flash" class="flash"></div>
+    </div>
+
+    <!-- タイトル -->
+    <section id="screen-title" class="screen">
+      <div class="panel menu-panel">
+        <p class="eyebrow">主婦の大爆走</p>
+        <h1 class="logo">カート<span>ラッシュ！</span></h1>
+        <div class="btn-col">
+          <button class="btn btn-primary" data-mode="normal">
+            <b>チェックポイントモード</b><small>制限時間とHP3で、ゴールを目指す</small>
+          </button>
+          <button class="btn btn-secondary" data-mode="timeattack">
+            <b>タイムアタック</b><small>ぶつかると+3秒。最速タイムに挑戦</small>
+          </button>
+          <button class="btn btn-ghost" data-go="howto">あそびかた</button>
+        </div>
+        <div class="row-links">
+          <a href="../../index.html" class="link">← ゲーム一覧</a>
+          <button id="btn-sound" class="link" type="button">🔊 サウンド ON</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ステージ選択 -->
+    <section id="screen-stage" class="screen hidden">
+      <div class="panel menu-panel wide">
+        <p class="eyebrow" id="stage-mode">チェックポイントモード</p>
+        <h2 class="screen-title">ステージをえらぶ</h2>
+        <div id="stage-list" class="stage-list"></div>
+        <button class="btn btn-ghost" data-go="title">もどる</button>
+      </div>
+    </section>
+
+    <!-- あそびかた -->
+    <section id="screen-howto" class="screen hidden">
+      <div class="panel menu-panel wide">
+        <h2 class="screen-title">あそびかた</h2>
+        <div class="howto">
+          <div class="howto-block">
+            <h3>操作</h3>
+            <ul>
+              <li><kbd>←</kbd><kbd>→</kbd> または <kbd>A</kbd><kbd>D</kbd>：左右に移動</li>
+              <li><kbd>↓</kbd> または <kbd>S</kbd>：ブレーキ</li>
+              <li><kbd>P</kbd> / <kbd>Esc</kbd>：一時停止</li>
+              <li>スマホ：画面の左側／右側をタッチして移動</li>
+            </ul>
+          </div>
+          <div class="howto-block">
+            <h3>チェックポイントモード</h3>
+            <ul>
+              <li>のこり時間が0になるか、HPがなくなるとゲームオーバー</li>
+              <li>チェックポイントを通ると<b>時間が追加</b>され、<b>HPが1回復</b></li>
+              <li>ゴール時の残りタイムとHPがボーナスになる</li>
+            </ul>
+          </div>
+          <div class="howto-block">
+            <h3>タイムアタック</h3>
+            <ul>
+              <li>HPなし。ぶつかるたびにタイムに<b>+3秒</b></li>
+              <li>ゴールまでの最速タイムを目指そう</li>
+            </ul>
+          </div>
+          <div class="howto-block">
+            <h3>アイテム</h3>
+            <ul>
+              <li>浮かんでいる食材やポイントを拾うと +100点</li>
+            </ul>
+          </div>
+        </div>
+        <button class="btn btn-ghost" data-go="title">もどる</button>
+      </div>
+    </section>
+
+    <!-- 一時停止 -->
+    <section id="screen-pause" class="screen hidden dim">
+      <div class="panel menu-panel">
+        <h2 class="screen-title">一時停止</h2>
+        <div class="btn-col">
+          <button id="btn-resume" class="btn btn-primary">つづける</button>
+          <button id="btn-restart" class="btn">はじめから</button>
+          <button id="btn-quit" class="btn btn-ghost">タイトルへ</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 結果 -->
+    <section id="screen-result" class="screen hidden dim">
+      <div class="panel menu-panel">
+        <div id="result-badge" class="badge hidden">NEW RECORD!</div>
+        <h2 id="result-head" class="result-head">STAGE CLEAR!</h2>
+        <p id="result-sub" class="result-sub"></p>
+        <div id="result-rows" class="result-rows"></div>
+        <div class="btn-col">
+          <button id="btn-next" class="btn btn-primary hidden">次のステージへ</button>
+          <button id="btn-retry" class="btn btn-secondary">もう一度</button>
+          <button id="btn-stages" class="btn btn-ghost">ステージ選択へ</button>
+        </div>
+      </div>
+    </section>
+
+    <script src="../../shared/storage.js"></script>
+    <script src="../../shared/audio.js"></script>
+    <script src="../../shared/input.js"></script>
+    <script src="stages.js"></script>
+    <script src="render.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>

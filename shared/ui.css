@@ -1,0 +1,129 @@
+/* 全ゲーム共通のデザイン: 色・文字・ボタン・パネル */
+:root {
+  --ink: #2b2d42;
+  --ink-soft: #5c5f77;
+  --paper: #fffaf0;
+  --paper-2: #fff1d6;
+  --line: #2b2d42;
+  --primary: #ff6b6b;
+  --primary-dark: #d94b4b;
+  --secondary: #2ec4b6;
+  --secondary-dark: #1f9a8f;
+  --accent: #ffd166;
+  --good: #3bb273;
+  --danger: #ef476f;
+  --radius: 18px;
+  --shadow: 0 5px 0 var(--line);
+  --font: 'M PLUS Rounded 1c', 'Hiragino Maru Gothic ProN', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font-family: inherit;
+}
+
+.panel {
+  background: var(--paper);
+  border: 3px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 0 var(--line);
+  padding: 24px;
+}
+
+.btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 18px;
+  border: 3px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.15s;
+  touch-action: manipulation;
+  text-decoration: none;
+}
+.btn small {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.85;
+}
+.btn:hover {
+  filter: brightness(1.04);
+}
+.btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 var(--line);
+}
+.btn:focus-visible {
+  outline: 3px dashed var(--secondary);
+  outline-offset: 3px;
+}
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-secondary {
+  background: var(--secondary);
+  color: #fff;
+}
+.btn-accent {
+  background: var(--accent);
+}
+.btn-ghost {
+  background: transparent;
+  box-shadow: none;
+  border-style: dashed;
+}
+.btn-ghost:active {
+  transform: none;
+  box-shadow: none;
+}
+
+.link {
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  padding: 6px 4px;
+}
+.link:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  background: var(--accent);
+}
