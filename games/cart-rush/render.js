@@ -570,9 +570,30 @@
     if (G.invuln > 0 && Math.floor(G.invuln * 14) % 2 === 0) return;
     const baseCamY = R.camY;
     R.camY = baseCamY - alt;
+    ctx.save();
     try {
+      // 空中の回転技: カート＋主婦の中心を軸に、画面上で回転・反転させる
+      const tr = P.trick;
+      if (tr) {
+        const c = project(P.x, 0.8, P.z + 0.7);
+        if (c) {
+          const e = clamp(tr.t / tr.dur, 0, 1);
+          const k = e * e * (3 - 2 * e); // 出だしと着地前はゆっくり
+          const a = Math.PI * 2 * tr.turns * k;
+          ctx.translate(c.x, c.y);
+          if (tr.type === 'roll') ctx.rotate(a * tr.dir);
+          else if (tr.type === 'flip') ctx.scale(1, Math.cos(a));
+          else if (tr.type === 'spin') ctx.scale(Math.cos(a), 1);
+          else if (tr.type === 'cork') {
+            ctx.rotate(a * tr.dir);
+            ctx.scale(1, Math.cos(a));
+          }
+          ctx.translate(-c.x, -c.y);
+        }
+      }
       drawPlayerBody(G, t);
     } finally {
+      ctx.restore();
       R.camY = baseCamY;
     }
   }
@@ -1144,7 +1165,7 @@
     const z1 = it.z + it.len / 2;
     if (z0 < R.camZ + 0.4) return;
     const h = it.h;
-    const used = it.used;
+    const used = it.launched; // 飛び出し済みの台はグレーに
     const glow = 0.5 + Math.sin(t * 12) * 0.5;
     const top = used ? '#9a9a9a' : mix('#ff7a00', '#ffb000', glow);
     const side = used ? '#6f6f6f' : '#c4430a';
@@ -1259,8 +1280,8 @@
   }
 
   function drawCornerSign(it) {
-    const a = project(-1.6, 5.4, it.z);
-    const b = project(1.6, 4.7, it.z);
+    const a = project(-1.8, 7.6, it.z); // ジャンプの最高点（約5.4m）より上に吊るす
+    const b = project(1.8, 6.8, it.z);
     const c = project(0, CEIL, it.z);
     if (!a || !b || !c) return;
     ctx.strokeStyle = '#8e979f';

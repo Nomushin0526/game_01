@@ -7,6 +7,7 @@
   const THEMES = window.CartThemes;
   const JUMP = window.CartJump;
   const SPEEDO = window.CartSpeedo;
+  const CONTROL = window.CartControl;
   const Render = window.CartRender;
   const { DRAW, CAM_BACK, zoneAt } = Render;
   const MAX_HP = 3;
@@ -141,7 +142,7 @@
     const d = DIMS[kind];
     // ジャンプ台の上や着地点には置かない
     if (!extra || !extra.vz) {
-      for (const r of G.ramps) if (Math.abs(r.z - z) < 5 && Math.abs(r.x - x) < d.w + r.w + 0.3) return null;
+      for (const r of G.ramps) if (z > r.z0 - 4 && z < r.z1 + 6 && Math.abs(r.x - x) < d.w + r.w + 0.3) return null;
     }
     const o = Object.assign({ kind, x, z, w: d.w, len: d.len, h: d.h, seed: G.rng(), hit: false, wob: 0, kx: 0 }, extra || {});
     G.obstacles.push(o);
@@ -161,20 +162,30 @@
   }
 
   // 加速ジャンプ台。確率で「空中で次の台に乗れる位置」に2つ目・3つ目を続けて置く
+  function makeRamp(x, z) {
+    const R0 = JUMP.ramp;
+    // z は台の手前の端。z0〜z1 の間で高さ 0 → h まで上がる
+    return { kind: 'ramp', x, z: z + R0.len / 2, z0: z, z1: z + R0.len, w: R0.w, len: R0.len, h: R0.h, used: false };
+  }
+  // 飛び出してから着地するまでの時間
+  function airTime(vy) {
+    return (vy + Math.sqrt(vy * vy + 2 * JUMP.gravity * JUMP.ramp.h)) / JUMP.gravity;
+  }
   function addRamp(x, z, th) {
-    if (z < 40 || z > G.stage.length - 30) return;
-    G.ramps.push({ kind: 'ramp', x, z, w: 0.9, len: 3.0, h: 0.7, used: false });
+    if (z < 40 || z > G.stage.length - 40) return;
+    G.ramps.push(makeRamp(x, z));
     let cx = x;
-    let cz = z;
+    let cz = z + JUMP.ramp.len;
     for (let lv = 0; lv < 2; lv++) {
       if (G.rng() > 0.55 - lv * 0.15) break;
-      // その段階の速度 × 滞空時間 の 55〜70% 先に置く（空中で横に動いて合わせる）
-      const vy = JUMP.launchVy + JUMP.chainVy * lv;
-      const air = (2 * vy) / JUMP.gravity;
-      cz += th.maxSpeed * JUMP.levels[lv] * air * (0.55 + G.rng() * 0.15);
-      cx = clamp(cx + (G.rng() < 0.5 ? -1 : 1) * (0.8 + G.rng() * 1.2), -th.limit + 0.4, th.limit - 0.4);
-      if (cz > G.stage.length - 30) break;
-      G.ramps.push({ kind: 'ramp', x: cx, z: cz, w: 0.9, len: 3.0, h: 0.7, used: false });
+      // 飛び出し地点から「その段階の速度 × 滞空時間」先が着地点。
+      // 降りてきたところで坂の中ほどに乗れるよう、着地点の少し手前に台の始まりを置く
+      const air = airTime(JUMP.launchVy + JUMP.chainVy * lv);
+      cz += th.maxSpeed * JUMP.levels[lv] * 0.97 * air - JUMP.ramp.len * 0.65;
+      cx = clamp(cx + (G.rng() < 0.5 ? -1 : 1) * (0.8 + G.rng() * 1.2), -th.limit + 0.5, th.limit - 0.5);
+      if (cz > G.stage.length - 40) break;
+      G.ramps.push(makeRamp(cx, cz));
+      cz += JUMP.ramp.len;
     }
   }
 
@@ -404,7 +415,7 @@
   window.addEventListener('resize', resize);
 
   function resetPlayer() {
-    G.player = { x: 0, tx: 0, z: 0, prevZ: 0, y: 0, vy: 0, speed: 0, vx: 0, steer: 0, phase: 0 };
+    G.player = { x: 0, tx: 0, z: 0, prevZ: 0, y: 0, vy: 0, speed: 0, vx: 0, steer: 0, phase: 0, onRamp: null, trick: null, rampFromAir: false };
     G.camX = 0;
   }
 
@@ -511,6 +522,8 @@
     G.invuln = 1.6;
     G.shake = 0.35;
     P.speed *= 0.1;
+    P.trick = null;
+    P.onRamp = null;
     G.boost = 0;
     G.boostLevel = 0;
     G.combo = 0;
@@ -530,22 +543,80 @@
     }
   }
 
-  // ジャンプ台に乗った。空中で乗った場合は連続ジャンプとして一段上の加速
-  function launch(th) {
+  const TRICKS = ['flip', 'roll', 'spin'];
+  // 坂を登りきって飛び出す。空中から坂に降りて乗った場合は連続ジャンプとして一段上の加速
+  function launch(r, th) {
     const P = G.player;
-    const airborne = P.y > 0.05;
-    G.chain = airborne ? (G.chain || 0) + 1 : 1;
-    G.boostLevel = Math.min(JUMP.levels.length, airborne ? G.boostLevel + 1 : Math.max(1, G.boostLevel));
+    const chained = !!P.rampFromAir;
+    G.chain = chained ? (G.chain || 0) + 1 : 1;
+    G.boostLevel = Math.min(JUMP.levels.length, chained ? G.boostLevel + 1 : Math.max(1, G.boostLevel));
     G.boost = JUMP.duration;
     G.jumps++;
     G.maxChain = Math.max(G.maxChain, G.chain);
     G.score += 50 * G.chain;
+    P.onRamp = null;
+    r.launched = true;
+    P.y = r.h;
     P.vy = JUMP.launchVy + JUMP.chainVy * (G.chain - 1);
-    P.y = Math.max(P.y, 0.01);
     P.speed = Math.max(P.speed, th.maxSpeed * JUMP.levels[G.boostLevel - 1] * 0.9);
+    // 空中の回転技。連続ジャンプほど派手に（2連続でひねり、3連続で2回転）
+    const type = G.chain === 1 ? TRICKS[Math.floor(Math.random() * TRICKS.length)] : G.chain === 2 ? 'cork' : 'flip';
+    P.trick = { type, t: 0, dur: airTime(P.vy) * 0.92, turns: G.chain >= 3 ? 2 : 1, dir: Math.random() < 0.5 ? -1 : 1 };
     sfx.jump(G.chain);
-    haptics.vibrate(airborne ? [20, 30, 40] : 35);
+    haptics.vibrate(chained ? [20, 30, 40] : 35);
     pulse('speed-chip');
+  }
+
+  // ジャンプ台の上にいるか・乗ったか・飛び出したかを判定する
+  function updateRamps(th, prevY) {
+    const P = G.player;
+    const zc = P.z + 0.6; // カートの中心
+    if (P.onRamp) {
+      const r = P.onRamp;
+      if (Math.abs(P.x - r.x) > r.w) {
+        P.onRamp = null; // 横から落ちた
+      } else if (zc >= r.z1) {
+        launch(r, th);
+      } else {
+        P.y = (r.h * (zc - r.z0)) / r.len;
+        P.vy = 0;
+      }
+      return;
+    }
+    for (const r of G.ramps) {
+      if (r.used || Math.abs(P.x - r.x) > r.w - 0.05 || zc < r.z0 || zc >= r.z1) continue;
+      const surf = (r.h * (zc - r.z0)) / r.len;
+      // 坂の表面に触れたときだけ乗る（高く飛んでいる最中に真上を通過しても反応しない）
+      if (P.y <= surf + 0.08 && prevY >= surf - 0.5) {
+        P.rampFromAir = prevY > 0.05;
+        P.onRamp = r;
+        P.trick = null;
+        r.used = true;
+        P.y = surf;
+        P.vy = 0;
+        if (P.rampFromAir) {
+          sfx.land();
+          haptics.vibrate(15);
+        }
+        return;
+      }
+    }
+  }
+
+  function landed() {
+    const P = G.player;
+    const chain = G.chain || 0;
+    G.chain = 0;
+    G.shake = Math.max(G.shake, 0.15);
+    sfx.land();
+    haptics.vibrate(25);
+    if (P.trick) {
+      // 技を決めて着地
+      G.score += 100 * Math.max(1, chain);
+      pulse('score-chip');
+      burst(['#ffffff', '#ffd166', '#2ec4b6'], 12);
+      P.trick = null;
+    }
   }
 
   function pulse(id) {
@@ -593,6 +664,7 @@
   function reachGoal() {
     G.state = 'goal';
     G.endTimer = 2.4;
+    G.player.onRamp = null;
     G.boost = 0;
     sfx.goal();
     haptics.vibrate([40, 60, 40, 60, 80]);
@@ -604,6 +676,7 @@
     G.state = 'over';
     G.overReason = reason;
     G.endTimer = 1.8;
+    G.player.onRamp = null;
     G.boost = 0;
     sfx.over();
     haptics.vibrate(300);
@@ -652,12 +725,12 @@
     const dragPx = input.consumeDragX();
     if (G.state === 'run') {
       // 指でなぞった分だけ目標位置を動かす（画面上の指の動き ≒ カートの動き）
-      P.tx += (dragPx * 1.15) / Render.view.k;
+      P.tx += (dragPx * CONTROL.dragSensitivity) / Render.view.k;
       P.tx += input.axisX() * th.steer * dt; // PC確認用のキーボード
       P.tx = clamp(P.tx, -th.limit, th.limit);
       const prevX = P.x;
-      const maxStep = 18 * dt;
-      P.x += clamp((P.tx - P.x) * Math.min(1, dt * 20), -maxStep, maxStep);
+      const maxStep = CONTROL.maxSideSpeed * dt;
+      P.x += clamp((P.tx - P.x) * Math.min(1, dt * 28), -maxStep, maxStep);
       P.vx = (P.x - prevX) / Math.max(dt, 1e-4);
 
       const top = G.boost > 0 ? th.maxSpeed * JUMP.levels[G.boostLevel - 1] : th.maxSpeed;
@@ -670,19 +743,19 @@
     }
     P.prevZ = P.z;
     // ジャンプ（空中）
-    if (P.y > 0 || P.vy > 0) {
+    const prevY = P.y;
+    if (!P.onRamp && (P.y > 0 || P.vy > 0)) {
       P.vy -= JUMP.gravity * dt;
       P.y += P.vy * dt;
+      if (P.trick) P.trick.t += dt;
       if (P.y <= 0) {
         P.y = 0;
         P.vy = 0;
-        G.chain = 0;
-        G.shake = Math.max(G.shake, 0.12);
-        sfx.land();
-        haptics.vibrate(20);
+        landed();
       }
     }
     P.z += P.speed * dt;
+    if (G.state === 'run') updateRamps(th, prevY);
     if (P.y <= 0) P.phase += Math.min(P.speed, 20) * dt * 1.3;
     P.steer += (clamp(P.vx / 10, -1, 1) - P.steer) * Math.min(1, dt * 10);
     G.boost = Math.max(0, G.boost - dt);
@@ -715,7 +788,7 @@
     }
     G.obstacles = G.obstacles.filter((o) => o.z + o.len > P.z - CAM_BACK - 2 && Math.abs(o.x) < 12);
     G.items = G.items.filter((it) => !it.taken && it.z > P.z - CAM_BACK - 2);
-    G.ramps = G.ramps.filter((r) => r.z + r.len > P.z - CAM_BACK - 2);
+    G.ramps = G.ramps.filter((r) => r.z1 > P.z - CAM_BACK - 2 || r === P.onRamp);
 
     if (G.state === 'run') {
       // 高速でもすり抜けないよう、前フレームから今フレームまでの区間で判定する
@@ -747,12 +820,6 @@
           G.score += 100;
           sfx.item();
           pulse('score-chip');
-        }
-      }
-      for (const r of G.ramps) {
-        if (!r.used && r.z + r.len / 2 >= pz && r.z - r.len / 2 <= cz && Math.abs(r.x - P.x) < r.w + 0.3) {
-          r.used = true;
-          launch(th);
         }
       }
     }
@@ -789,7 +856,7 @@
     G.shake = Math.max(0, G.shake - dt);
     G.camX = (G.camX || 0) + (P.x * 0.85 - (G.camX || 0)) * Math.min(1, dt * 8);
     // ジャンプ中はカメラも少し持ち上げて追いかける
-    Render.setCamera(G.camX, P.z - CAM_BACK, P.y * 0.45);
+    Render.setCamera(G.camX, P.z - CAM_BACK, P.y * 0.55);
     updateEffects(dt);
   }
 
