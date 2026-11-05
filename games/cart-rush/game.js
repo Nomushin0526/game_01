@@ -13,11 +13,13 @@
   const MAX_HP = 3;
   const REC_KEY = 'cartRush.records';
 
+  // 3D（WebGL）は #game、スピード線やパーティクルなど2Dの重ね描きは #fx に描く
   const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  Render.setContext(ctx);
-  const input = new Input(canvas);
-  new ResizeObserver(() => resize()).observe(canvas);
+  Render.init(canvas);
+  const fx = document.getElementById('fx');
+  const ctx = fx.getContext('2d');
+  const input = new Input(fx);
+  new ResizeObserver(() => resize()).observe(fx);
   const $ = (id) => document.getElementById(id);
 
   let records = storage.get(REC_KEY, {});
@@ -157,7 +159,7 @@
   }
   function addItems(x, z, count, icon) {
     for (let k = 0; k < count; k++) {
-      G.items.push({ kind: 'item', x, z: z + k * 1.8, icon: icon || GROCERIES[Math.floor(G.rng() * GROCERIES.length)], taken: false });
+      G.items.push({ kind: 'item', x, z: z + k * 5, icon: icon || GROCERIES[Math.floor(G.rng() * GROCERIES.length)], taken: false });
     }
   }
 
@@ -227,7 +229,7 @@
       const opts = [idx - 1, idx + 1].filter((i) => i >= 0 && i < th.lanes.length);
       const to = th.lanes[opts[Math.floor(rng() * opts.length)]];
       // プレイヤーとの距離がこの値まで縮まったら動き出す
-      change = { to, dist: 30 + rng() * 35, blinker: lc.blinker, signal: lc.blinker ? 1.0 : 0, moveTime: lc.blinker ? 0.9 : 0.7 };
+      change = { to, dist: 75 + rng() * 90, blinker: lc.blinker, signal: lc.blinker ? 1.0 : 0, moveTime: lc.blinker ? 0.9 : 0.7 };
     }
     const jitter = change ? 0 : (rng() - 0.5) * 0.4;
     return addOb(kind, laneX + jitter, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz, change, lcState: change ? 'wait' : null });
@@ -270,12 +272,12 @@
       for (let k = 0; k < n; k++) {
         const kind = pickWeighted(rng, { car: 34, bike: 12, cone: 18, barrier: 16, cat: 10, shopper: 10 });
         const x = lanes[k];
-        if (kind === 'car') addVehicle('car', x < 0 ? -1.75 : 1.75, z, th, 10 + rng() * 6);
-        else if (kind === 'bike') addOb('bike', x < 0 ? -2.6 : 2.6, z, Object.assign(person(rng), { vz: 5 + rng() * 2 }));
+        if (kind === 'car') addVehicle('car', x < 0 ? -1.75 : 1.75, z, th, 25 + rng() * 15);
+        else if (kind === 'bike') addOb('bike', x < 0 ? -2.6 : 2.6, z, Object.assign(person(rng), { vz: 12 + rng() * 5 }));
         else if (kind === 'barrier') addOb('barrier', clamp(x, -2.4, 2.4), z);
         else if (kind === 'cat') {
           const from = rng() < 0.5 ? -1 : 1;
-          addOb('cat', from * (th.roadW + 0.8), z, { vx: -from * (2.4 + rng() * 0.8), trigger: 55, active: false });
+          addOb('cat', from * (th.roadW + 0.8), z, { vx: -from * (2.4 + rng() * 0.8), trigger: 140, active: false });
         } else if (kind === 'shopper') addOb('shopper', x, z, Object.assign(person(rng), { basket: false, vx: 0 }));
         else {
           addOb('cone', x - 0.35, z);
@@ -294,11 +296,11 @@
     for (let k = 0; k < n; k++) {
       const x = lanes[k];
       const kind = pickWeighted(rng, { car: 50, truck: 25, cone: 25 });
-      if (kind === 'car') addVehicle('car', x, z, th, 20 + rng() * 8);
-      else if (kind === 'truck') addVehicle('truck', x, z, th, 18 + rng() * 4);
+      if (kind === 'car') addVehicle('car', x, z, th, 50 + rng() * 20);
+      else if (kind === 'truck') addVehicle('truck', x, z, th, 45 + rng() * 10);
       else {
         const dir = rng() < 0.5 ? -1 : 1;
-        for (let c = 0; c < 4; c++) addOb('cone', x - dir * 1.1 + dir * c * 0.7, z + c * 1.4);
+        for (let c = 0; c < 4; c++) addOb('cone', x - dir * 1.1 + dir * c * 0.7, z + c * 3.5);
       }
     }
     const free = lanes[n] !== undefined ? lanes[n] : 0;
@@ -404,11 +406,11 @@
 
   // ---------- 進行 ----------
   function resize() {
-    W = canvas.clientWidth;
-    H = canvas.clientHeight;
+    W = fx.clientWidth;
+    H = fx.clientHeight;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(W * dpr);
-    canvas.height = Math.round(H * dpr);
+    fx.width = Math.round(W * dpr);
+    fx.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     Render.setView(W, H);
   }
@@ -420,6 +422,7 @@
   }
 
   function goMenu() {
+    G.runId = (G.runId || 0) + 1;
     G.state = 'menu';
     G.stage = STAGES[0];
     G.obstacles = [];
@@ -440,6 +443,7 @@
   function startStage(idx, mode) {
     const st = STAGES[idx];
     Object.assign(G, {
+      runId: (G.runId || 0) + 1,
       state: 'countdown',
       mode,
       stageIdx: idx,
@@ -689,12 +693,12 @@
     if (G.state === 'paused' || G.state === 'done') return;
 
     if (G.state === 'menu') {
-      P.speed = 8;
+      P.speed = 20;
       P.x = Math.sin(G.time * 0.5) * 1.4;
       P.steer = Math.cos(G.time * 0.5) * 0.4;
       P.z += P.speed * dt;
       P.phase += P.speed * dt * 1.3;
-      if (P.z > 1100) P.z = 0;
+      if (P.z > 3000) P.z = 0;
       Render.setCamera(P.x * 0.6, P.z - CAM_BACK);
       return;
     }
@@ -1105,10 +1109,10 @@
     }
     update(dt);
 
-    ctx.save();
-    if (G.shake > 0) ctx.translate((Math.random() - 0.5) * 16 * G.shake, (Math.random() - 0.5) * 16 * G.shake);
+    Render.setShake(G.shake);
     Render.drawWorld(G, G.time);
-    ctx.restore();
+    ctx.clearRect(0, 0, W, H);
+    Render.drawOverlay(ctx, G, G.time);
     drawEffects();
     if (G.state !== 'menu' && G.state !== 'done') updateHud();
     input.endFrame();

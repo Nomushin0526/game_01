@@ -5,7 +5,8 @@
   background: #efe9dc;
 }
 
-#game {
+#game,
+#fx {
   position: absolute;
   inset: 0;
   width: 100%;

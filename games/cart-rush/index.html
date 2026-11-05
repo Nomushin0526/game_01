@@ -16,6 +16,7 @@
   <body class="app-body">
     <div id="app" class="app">
     <canvas id="game" aria-label="ゲーム画面"></canvas>
+    <canvas id="fx" aria-hidden="true"></canvas>
 
     <!-- プレイ中の表示 -->
     <div id="hud" class="hud hidden">
@@ -166,7 +167,9 @@
     <script src="../../shared/audio.js"></script>
     <script src="../../shared/input.js"></script>
     <script src="stages.js"></script>
-    <script src="render.js"></script>
+    <script src="../../shared/vendor/three.min.js"></script>
+    <script src="models.js"></script>
+    <script src="render3d.js"></script>
     <script src="game.js"></script>
   </body>
 </html>
