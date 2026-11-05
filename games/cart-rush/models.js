@@ -418,22 +418,6 @@
       g.fill();
     }
   });
-  const arrowTex = canvasTex('arrow', 128, 128, (g, w, h) => {
-    g.fillStyle = '#ffb300';
-    g.strokeStyle = '#2b2d42';
-    g.lineWidth = 8;
-    g.beginPath();
-    g.moveTo(118, 64);
-    g.lineTo(64, 14);
-    g.lineTo(64, 40);
-    g.lineTo(10, 40);
-    g.lineTo(10, 88);
-    g.lineTo(64, 88);
-    g.lineTo(64, 114);
-    g.closePath();
-    g.fill();
-    g.stroke();
-  });
   const glowTex = canvasTex('glow', 64, 64, (g, w, h) => {
     const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
     gr.addColorStop(0, 'rgba(255,255,255,1)');
@@ -739,20 +723,22 @@
     return g;
   }
   // ウィンカー（後ろの角）と屋根の上の矢印
-  function addBlinkers(g, w, y, z, roofY) {
+  // ウィンカー（後ろの角のランプ）
+  //   近くではランプと光、遠くでは「画面上で一定の大きさ」の光の点で点滅が分かるようにする（矢印などは出さない）
+  const flareMat = new T.SpriteMaterial({ map: glowTex, color: 0xffa000, transparent: true, depthWrite: false, sizeAttenuation: false });
+  function addBlinkers(g, w, y, z) {
     const amber = MB('#ffb300');
-    const L = box(g, w * 0.2, 0.16, 0.05, -w * 0.4, y, z, amber);
-    const R = box(g, w * 0.2, 0.16, 0.05, w * 0.4, y, z, amber);
+    const L = box(g, w * 0.24, 0.22, 0.06, -w * 0.38, y, z, amber);
+    const R = box(g, w * 0.24, 0.22, 0.06, w * 0.38, y, z, amber);
     const glowMat = new T.SpriteMaterial({ map: glowTex, color: 0xffa000, transparent: true, depthWrite: false, opacity: 0.9 });
     const gl = new T.Sprite(glowMat);
-    gl.scale.set(1.2, 1.2, 1);
+    gl.scale.set(1.6, 1.6, 1);
     g.add(gl);
-    const arrow = new T.Sprite(new T.SpriteMaterial({ map: arrowTex, transparent: true, depthWrite: false }));
-    arrow.scale.set(1.6, 1.6, 1);
-    arrow.position.set(0, roofY + 0.9, 0);
-    g.add(arrow);
-    L.visible = R.visible = gl.visible = arrow.visible = false;
-    g.userData.blink = { L, R, gl, arrow, y, z, w };
+    const flare = new T.Sprite(flareMat);
+    flare.scale.set(0.07, 0.07, 1);
+    g.add(flare);
+    L.visible = R.visible = gl.visible = flare.visible = false;
+    g.userData.blink = { L, R, gl, flare, y, z, w };
   }
   function setBlink(g, dir, on) {
     const b = g.userData.blink;
@@ -761,10 +747,10 @@
     b.L.visible = show && dir < 0;
     b.R.visible = show && dir > 0;
     b.gl.visible = show;
-    b.arrow.visible = show;
+    b.flare.visible = show;
     if (show) {
-      b.gl.position.set(dir * b.w * 0.4, b.y, b.z + 0.1);
-      b.arrow.material.rotation = dir < 0 ? Math.PI : 0;
+      b.gl.position.set(dir * b.w * 0.38, b.y, b.z + 0.1);
+      b.flare.position.set(dir * b.w * 0.38, b.y, b.z + 0.15);
     }
   }
 
