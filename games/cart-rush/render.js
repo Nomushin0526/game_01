@@ -178,7 +178,12 @@
     [0.63, 0.36, 1.2],
     [0.86, 0.2, 0.8],
   ];
-  function drawBackground(zone, t) {
+  const SKIES = {
+    day: { grass: ['#8fd16a', '#84c55f'], top: '#7cc8f2', fog: '#e2f3fb', cloud: 'rgba(255,255,255,0.9)', far: '#a9c9de', farStreet: '#b9dcc0', near: '#94c49a', nearStreet: '#9fd08b', sun: null },
+    evening: { grass: ['#8f8a5a', '#857f52'], top: '#4a3a78', fog: '#ffc58f', cloud: 'rgba(255,190,170,0.75)', far: '#8a6a9a', farStreet: '#9a7a9a', near: '#a0707a', nearStreet: '#a07a78', sun: '#ffdf8a' },
+  };
+
+  function drawBackground(zone, t, stage) {
     const W = R.W;
     const H = R.H;
     const hz = R.hz;
@@ -188,9 +193,11 @@
       ctx.fillRect(0, 0, W, H);
       return;
     }
-    R.fog = '#e2f3fb';
+    const sky = SKIES[(stage && stage.sky) || 'day'];
+    R.fog = sky.fog;
+    R.grass = sky.grass;
     const g = ctx.createLinearGradient(0, 0, 0, hz);
-    g.addColorStop(0, '#7cc8f2');
+    g.addColorStop(0, sky.top);
     g.addColorStop(1, R.fog);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, hz + 1);
@@ -199,14 +206,18 @@
       const x = ((cx * W + t * 6 * sc - R.camX * 4) % (W + 200) + W + 200) % (W + 200) - 100;
       const y = cy * hz;
       const s = (40 + 30 * sc) * (W / 1200 + 0.4);
-      ellipse(x, y, s, s * 0.35, 'rgba(255,255,255,0.9)');
-      ellipse(x - s * 0.5, y + s * 0.08, s * 0.6, s * 0.28, 'rgba(255,255,255,0.9)');
-      ellipse(x + s * 0.55, y + s * 0.1, s * 0.55, s * 0.25, 'rgba(255,255,255,0.9)');
+      ellipse(x, y, s, s * 0.35, sky.cloud);
+      ellipse(x - s * 0.5, y + s * 0.08, s * 0.6, s * 0.28, sky.cloud);
+      ellipse(x + s * 0.55, y + s * 0.1, s * 0.55, s * 0.25, sky.cloud);
+    }
+    if (sky.sun) {
+      circle(W * 0.5 - R.camX * 2, hz - H * 0.05, H * 0.07, 'rgba(255,223,138,0.35)');
+      circle(W * 0.5 - R.camX * 2, hz - H * 0.05, H * 0.045, sky.sun);
     }
     // 遠景の山
     const off = -R.camX * 3;
     const mh = zone.type === 'highway' ? 0.16 : 0.09;
-    ctx.fillStyle = zone.type === 'highway' ? '#a9c9de' : '#b9dcc0';
+    ctx.fillStyle = zone.type === 'highway' ? sky.far : sky.farStreet;
     ctx.beginPath();
     ctx.moveTo(0, hz);
     for (let x = 0; x <= W + 20; x += 20) {
@@ -217,7 +228,7 @@
     ctx.lineTo(W, hz);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = zone.type === 'highway' ? '#94c49a' : '#9fd08b';
+    ctx.fillStyle = zone.type === 'highway' ? sky.near : sky.nearStreet;
     ctx.beginPath();
     ctx.moveTo(0, hz + 1);
     for (let x = 0; x <= W + 20; x += 20) {
@@ -229,7 +240,7 @@
     ctx.closePath();
     ctx.fill();
     // 地面
-    ctx.fillStyle = mix('#84c55f', R.fog, 0.6);
+    ctx.fillStyle = mix(R.grass[1], R.fog, 0.6);
     ctx.fillRect(0, hz, W, H - hz);
   }
 
@@ -490,7 +501,8 @@
     }
 
     // 屋外
-    flat(-140, 140, 0, z0, z1, F(i % 2 ? '#8fd16a' : '#84c55f'));
+    const grass = R.grass || ['#8fd16a', '#84c55f'];
+    flat(-140, 140, 0, z0, z1, F(i % 2 ? grass[0] : grass[1]));
     if (zone.type === 'street') {
       flat(-RW - 1.6, RW + 1.6, 0, z0, z1, F(i % 2 ? '#dcd8cf' : '#d4d0c6'));
       flat(-RW - 0.18, RW + 0.18, 0, z0, z1, F('#b8b3a8'));
@@ -876,7 +888,38 @@
     text('!', p.x, p.y - 0.42 * s, 0.42 * s, '#2b2d42');
   }
 
-  function drawCar(o) {
+  // ウィンカー（オレンジの点滅）。rect: 車の後ろ面、dir: -1 左 / 1 右
+  function drawBlinker(rect, dir, time, roof) {
+    if (!dir || Math.floor(time * 5) % 2) return;
+    // 遠くからでも分かるよう、屋根の上に進む方向の矢印も点滅させる
+    if (roof) {
+      const s = Math.max(roof.s, 26); // 遠くの車でも矢印は一定以上の大きさで出す
+      const cx = roof.x + dir * 0.25 * s;
+      const cy = roof.y - 0.35 * s;
+      ctx.fillStyle = '#ffb300';
+      ctx.strokeStyle = '#2b2d42';
+      ctx.lineWidth = Math.max(1, 0.05 * s);
+      ctx.beginPath();
+      ctx.moveTo(cx + dir * 0.45 * s, cy);
+      ctx.lineTo(cx - dir * 0.05 * s, cy - 0.3 * s);
+      ctx.lineTo(cx - dir * 0.05 * s, cy - 0.12 * s);
+      ctx.lineTo(cx - dir * 0.45 * s, cy - 0.12 * s);
+      ctx.lineTo(cx - dir * 0.45 * s, cy + 0.12 * s);
+      ctx.lineTo(cx - dir * 0.05 * s, cy + 0.12 * s);
+      ctx.lineTo(cx - dir * 0.05 * s, cy + 0.3 * s);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    const w = rect.w * 0.26;
+    const h = rect.h * 0.22;
+    const x = dir < 0 ? rect.l - w * 0.15 : rect.r - w * 0.85;
+    const y = rect.t + rect.h * 0.12;
+    circle(x + w / 2, y + h / 2, Math.max(w, h) * 1.6, 'rgba(255,170,0,0.4)');
+    rrFill(x, y, w, h, h * 0.3, '#ffb300');
+  }
+
+  function drawCar(o, time) {
     const z0 = o.z - o.len / 2;
     const z1 = o.z + o.len / 2;
     const x0 = o.x - o.w;
@@ -903,9 +946,10 @@
     const wh = 0.22 * body.s;
     ctx.fillRect(l + w * 0.06, b, w * 0.18, wh);
     ctx.fillRect(l + w * 0.76, b, w * 0.18, wh);
+    drawBlinker(body, o.blinkDir, time, project(o.x, 1.4, Math.max(z0 + 1.5, R.camZ + 0.5)));
   }
 
-  function drawTruck(o) {
+  function drawTruck(o, time) {
     const z0 = o.z - o.len / 2;
     const z1 = o.z + o.len / 2;
     const p = project(o.x, 0, Math.max(z0, R.camZ + 0.3));
@@ -930,6 +974,7 @@
     const wh = 0.5 * f.s;
     ctx.fillRect(f.l + f.w * 0.05, f.b, f.w * 0.2, wh);
     ctx.fillRect(f.r - f.w * 0.25, f.b, f.w * 0.2, wh);
+    drawBlinker({ l: f.l, r: f.r, w: f.w, t: f.b - f.h * 0.3, h: f.h * 0.3 }, o.blinkDir, time, project(o.x, 3.0, Math.max(z0 + 1, R.camZ + 0.5)));
   }
 
   function drawBike(o, t) {
@@ -1305,6 +1350,31 @@
     text('わが家', (f.l + f.r) / 2, f.t - f.h * 0.2, f.h * 0.12, '#d9534f');
   }
 
+  // 隣町のスーパー（ステージ3のゴール）
+  function drawStore(it) {
+    const f = box(-4.6, 4.6, 0, 3.6, it.z, it.z + 8, '#f7f3ea', '#d9d2c2', '#e6dfcf');
+    if (!f) return;
+    // 看板
+    ctx.fillStyle = '#e84a4a';
+    ctx.fillRect(f.l, f.t, f.w, f.h * 0.24);
+    text('SUPER となりまち', (f.l + f.r) / 2, f.t + f.h * 0.12, f.h * 0.13, '#ffffff', 900, f.w * 0.9);
+    // ひさし（ストライプ）
+    const n = 10;
+    for (let k = 0; k < n; k++) {
+      ctx.fillStyle = k % 2 ? '#ffffff' : '#2ec4b6';
+      ctx.fillRect(f.l + (f.w * k) / n, f.t + f.h * 0.24, f.w / n + 1, f.h * 0.1);
+    }
+    // ガラスの自動ドアと窓
+    ctx.fillStyle = '#bfe3f2';
+    ctx.fillRect(f.l + f.w * 0.36, f.t + f.h * 0.42, f.w * 0.28, f.h * 0.58);
+    ctx.fillRect(f.l + f.w * 0.05, f.t + f.h * 0.42, f.w * 0.25, f.h * 0.35);
+    ctx.fillRect(f.r - f.w * 0.3, f.t + f.h * 0.42, f.w * 0.25, f.h * 0.35);
+    ctx.fillStyle = '#8fb9cc';
+    ctx.fillRect(f.l + f.w * 0.495, f.t + f.h * 0.42, f.w * 0.01, f.h * 0.58);
+    rrFill(f.l + f.w * 0.07, f.t + f.h * 0.48, f.w * 0.2, f.h * 0.14, 4, '#ffe14d');
+    text('タイムセール', f.l + f.w * 0.17, f.t + f.h * 0.55, f.h * 0.06, '#e84a4a', 900, f.w * 0.19);
+  }
+
   function drawSprite(it, G, t) {
     switch (it.kind) {
       case 'player':
@@ -1320,9 +1390,9 @@
       case 'wetsign':
         return drawWetSign(it);
       case 'car':
-        return drawCar(it);
+        return drawCar(it, t);
       case 'truck':
-        return drawTruck(it);
+        return drawTruck(it, t);
       case 'bike':
         return drawBike(it, t);
       case 'cone':
@@ -1354,6 +1424,8 @@
         return drawRegisters(it, t);
       case 'home':
         return drawHome(it);
+      case 'store':
+        return drawStore(it);
     }
   }
 
@@ -1361,7 +1433,7 @@
   function drawWorld(G, t) {
     const stage = G.stage;
     const P = G.player;
-    drawBackground(zoneAt(stage, P.z), t);
+    drawBackground(zoneAt(stage, P.z), t, stage);
 
     const startSeg = Math.floor((R.camZ + 0.3) / SEG);
     const endSeg = Math.floor((R.camZ + DRAW) / SEG);
@@ -1379,7 +1451,8 @@
       list.push({ kind: 'gate', z: cz, RW: Math.max(roadW(cz - 0.5), roadW(cz + 0.5)), passed: k < G.cpIndex, label: 'CHECKPOINT' });
     });
     list.push({ kind: 'goal', z: stage.length, RW: roadW(stage.length), label: `GOAL ${stage.goalLabel}` });
-    if (stage.id === 'market') list.push({ kind: 'registers', z: stage.length + 16 });
+    if (stage.goalScene === 'registers') list.push({ kind: 'registers', z: stage.length + 16 });
+    else if (stage.goalScene === 'store') list.push({ kind: 'store', z: stage.length + 26 });
     else list.push({ kind: 'home', z: stage.length + 26 });
 
     for (const o of G.obstacles) list.push(o);

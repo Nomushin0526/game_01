@@ -142,6 +142,16 @@
     linear-gradient(90deg, #84c55f 0 22%, #d4d0c6 22% 28%, #5a6068 28% 72%, #d4d0c6 72% 78%, #84c55f 78%) bottom / 100% 55% no-repeat,
     #9fd6f5;
 }
+.stage-rush .stage-thumb {
+  background:
+    linear-gradient(90deg, #8a6a7a 0 18%, #6f747b 18% 24%, #4d5259 24% 76%, #6f747b 76% 82%, #8a6a7a 82%) bottom / 100% 55% no-repeat,
+    linear-gradient(#4a3a78, #ff9a5a);
+}
+.stars {
+  color: #ff8c1a;
+  letter-spacing: 1px;
+  font-size: 13px;
+}
 .stage-info {
   padding: 10px 12px;
 }
@@ -353,6 +363,7 @@
   }
 }
 .hud-center {
+  position: relative;
   text-align: center;
   background: rgba(255, 255, 255, 0.92);
   border: 3px solid var(--line);
@@ -370,6 +381,34 @@
   font-weight: 900;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
+}
+.time-pop {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 900;
+  color: rgba(239, 71, 111, 0.6);
+  white-space: nowrap;
+  opacity: 0;
+}
+.time-pop.show {
+  animation: time-pop 1s ease-out;
+}
+@keyframes time-pop {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -4px);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
 }
 .timer.warn {
   color: var(--danger);

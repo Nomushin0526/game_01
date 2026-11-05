@@ -178,6 +178,50 @@
     }
   }
 
+  // 車・トラック。ステージ設定によっては、プレイヤーが近づいたところで隣の車線へ移る
+  //   blinker: true なら移る前にウィンカーを出す（ステージ2）、false なら合図なしで急に動く（ステージ3）
+  function updateLaneChange(o, P, dt) {
+    const c = o.change;
+    if (o.lcState === 'wait') {
+      if (o.z - P.z < c.dist) {
+        o.lcState = c.signal > 0 ? 'signal' : 'move';
+        o.lcTimer = c.signal;
+        o.lcFrom = o.x;
+        o.blinkDir = c.blinker ? Math.sign(c.to - o.x) : 0;
+      }
+    } else if (o.lcState === 'signal') {
+      o.lcTimer -= dt;
+      if (o.lcTimer <= 0) {
+        o.lcState = 'move';
+        o.lcTimer = 0;
+      }
+    } else if (o.lcState === 'move') {
+      o.lcTimer += dt;
+      const k = clamp(o.lcTimer / c.moveTime, 0, 1);
+      const e = k * k * (3 - 2 * k); // なめらかに
+      o.x = o.lcFrom + (c.to - o.lcFrom) * e;
+      if (k >= 1) {
+        o.lcState = 'done';
+        o.blinkDir = 0;
+      }
+    }
+  }
+
+  function addVehicle(kind, laneX, z, th, vz) {
+    const rng = G.rng;
+    const lc = G.stage.laneChange;
+    let change = null;
+    if (lc && th.lanes && rng() < lc.chance) {
+      const idx = th.lanes.indexOf(laneX);
+      const opts = [idx - 1, idx + 1].filter((i) => i >= 0 && i < th.lanes.length);
+      const to = th.lanes[opts[Math.floor(rng() * opts.length)]];
+      // プレイヤーとの距離がこの値まで縮まったら動き出す
+      change = { to, dist: 30 + rng() * 35, blinker: lc.blinker, signal: lc.blinker ? 1.0 : 0, moveTime: lc.blinker ? 0.9 : 0.7 };
+    }
+    const jitter = change ? 0 : (rng() - 0.5) * 0.4;
+    return addOb(kind, laneX + jitter, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz, change, lcState: change ? 'wait' : null });
+  }
+
   // 1列ぶんの障害物を置き、次の列までの間隔を返す。
   // 列の間隔は「最高速で何秒後に次の列が来るか」で決める（速いほど距離も開くが、判断の猶予は短くなる）
   function spawnRow(z) {
@@ -189,15 +233,16 @@
     const rampChance = 0.22 + diff * 0.08;
 
     if (zone.type === 'market') {
+      // いちばんやさしいステージ: 列の間隔を広めに、1列あたりの数を少なめに
       const lanes = shuffle(rng, [-2.2, -1.1, 0, 1.1, 2.2]);
-      const n = 1 + (rng() < 0.4 + diff * 0.4 ? 1 : 0) + (rng() < 0.1 + diff * 0.35 ? 1 : 0);
+      const n = 1 + (rng() < 0.25 + diff * 0.35 ? 1 : 0) + (diff > 0.6 && rng() < 0.2 ? 1 : 0);
       for (let k = 0; k < n; k++) {
         const x = lanes[k] + (rng() - 0.5) * 0.3;
         const kind = pickWeighted(rng, { shopper: 36, cart: 18, display: 14, boxes: 16, wetsign: 16 });
         const oz = z + rng() * 2;
         if (kind === 'shopper') {
-          const moving = rng() < 0.3 + diff * 0.3;
-          addOb('shopper', x, oz, Object.assign(person(rng), { basket: rng() < 0.6, vx: moving ? (rng() < 0.5 ? -1 : 1) * (0.8 + rng() * 1.0) : 0, bounce: 2.5 }));
+          const moving = rng() < 0.2 + diff * 0.25;
+          addOb('shopper', x, oz, Object.assign(person(rng), { basket: rng() < 0.6, vx: moving ? (rng() < 0.5 ? -1 : 1) * (0.6 + rng() * 0.7) : 0, bounce: 2.5 }));
         } else if (kind === 'display' || kind === 'boxes') {
           addOb(kind, clamp(x, -2.2, 2.2), oz);
         } else addOb(kind, x, oz);
@@ -205,7 +250,7 @@
       const free = lanes[n] !== undefined ? lanes[n] : 0;
       if (rng() < rampChance) addRamp(free, z - th.maxSpeed * 0.35, th);
       else if (rng() < 0.6) addItems(free, z + 4, 1 + Math.floor(rng() * 3));
-      return th.maxSpeed * gapSec;
+      return th.maxSpeed * (lerp(1.0, 0.7, diff) + rng() * 0.2);
     }
 
     if (zone.type === 'street') {
@@ -214,7 +259,7 @@
       for (let k = 0; k < n; k++) {
         const kind = pickWeighted(rng, { car: 34, bike: 12, cone: 18, barrier: 16, cat: 10, shopper: 10 });
         const x = lanes[k];
-        if (kind === 'car') addOb('car', (x < 0 ? -1.75 : 1.75) + (rng() - 0.5) * 0.4, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz: 10 + rng() * 6 });
+        if (kind === 'car') addVehicle('car', x < 0 ? -1.75 : 1.75, z, th, 10 + rng() * 6);
         else if (kind === 'bike') addOb('bike', x < 0 ? -2.6 : 2.6, z, Object.assign(person(rng), { vz: 5 + rng() * 2 }));
         else if (kind === 'barrier') addOb('barrier', clamp(x, -2.4, 2.4), z);
         else if (kind === 'cat') {
@@ -238,8 +283,8 @@
     for (let k = 0; k < n; k++) {
       const x = lanes[k];
       const kind = pickWeighted(rng, { car: 50, truck: 25, cone: 25 });
-      if (kind === 'car') addOb('car', x + (rng() - 0.5) * 0.5, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz: 20 + rng() * 8 });
-      else if (kind === 'truck') addOb('truck', x, z, { color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], vz: 18 + rng() * 4 });
+      if (kind === 'car') addVehicle('car', x, z, th, 20 + rng() * 8);
+      else if (kind === 'truck') addVehicle('truck', x, z, th, 18 + rng() * 4);
       else {
         const dir = rng() < 0.5 ? -1 : 1;
         for (let c = 0; c < 4; c++) addOb('cone', x - dir * 1.1 + dir * c * 0.7, z + c * 1.4);
@@ -401,7 +446,7 @@
       combo: 0,
       comboTimer: 0,
       nearMisses: 0,
-      timeLeft: st.startTime,
+      timeLeft: 0,
       elapsed: 0,
       penalty: 0,
       hp: MAX_HP,
@@ -421,12 +466,41 @@
       rng: mulberry32((Date.now() ^ (idx * 7919)) >>> 0),
     });
     resetPlayer();
+    G.sections = sectionTimes(st);
+    G.timeLeft = G.sections[0];
     buildHud();
     showScreen(null);
     setHud(true);
     showZone(`STAGE ${st.no}  ${st.name}`);
     $('drag-hint').classList.remove('hidden');
     $('drag-hint-sub').classList.toggle('hidden', isTouchDevice());
+  }
+
+  // 各区間の持ち時間 = ミスなし・ジャンプ台なしで走ったときの区間タイム + slack（0.5秒単位に切り上げ）
+  function sectionTimes(st) {
+    const marks = st.checkpoints.concat([st.length]);
+    const arrive = [];
+    let v = 0;
+    let z = 0;
+    let t = 0;
+    const dt = 1 / 120;
+    while (arrive.length < marks.length) {
+      const th = THEMES[zoneAt(st, z).type];
+      if (v < th.maxSpeed) v = Math.min(th.maxSpeed, v + th.accel * dt);
+      else v = Math.max(th.maxSpeed, v - 14 * dt);
+      z += v * dt;
+      t += dt;
+      while (arrive.length < marks.length && z >= marks[arrive.length]) arrive.push(t);
+    }
+    return arrive.map((a, i) => Math.ceil((a - (i ? arrive[i - 1] : 0) + st.slack) * 2) / 2);
+  }
+
+  function timePop(text) {
+    const el = $('time-pop');
+    el.textContent = text;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
   }
 
   function onHit(o) {
@@ -436,7 +510,7 @@
     G.hits++;
     G.invuln = 1.6;
     G.shake = 0.35;
-    P.speed *= 0.15;
+    P.speed *= 0.1;
     G.boost = 0;
     G.boostLevel = 0;
     G.combo = 0;
@@ -447,9 +521,12 @@
     if (G.mode === 'normal') {
       G.hp--;
       renderHearts();
+      G.timeLeft = Math.max(0, G.timeLeft - G.stage.hitPenalty);
+      timePop(`-${G.stage.hitPenalty}秒`);
       if (G.hp <= 0) gameOver('hp');
     } else {
       G.penalty += G.stage.taPenalty;
+      timePop(`+${G.stage.taPenalty}秒`);
     }
   }
 
@@ -496,7 +573,7 @@
     G.score += 500;
     burst(['#ff8c42', '#ffd166', '#2ec4b6', '#ffffff'], 26);
     if (G.mode === 'normal') {
-      const bonus = G.stage.cpBonus[i];
+      const bonus = G.sections[i + 1];
       G.timeLeft += bonus;
       G.warnSec = 99;
       let sub = `+${bonus}秒`;
@@ -616,6 +693,7 @@
     // 障害物の移動
     for (const o of G.obstacles) {
       if (o.vz) o.z += o.vz * dt;
+      if (o.change && !o.hit) updateLaneChange(o, P, dt);
       if (o.trigger && !o.active && P.z > o.z - o.trigger) o.active = true;
       if (o.vx && (o.trigger ? o.active : true) && !o.hit) {
         o.x += o.vx * dt;
@@ -874,6 +952,7 @@
         <div class="stage-thumb"><span>STAGE ${st.no}</span></div>
         <div class="stage-info">
           <h3>${st.name}${rec.cleared ? ' <em class="tag">クリア</em>' : ''}</h3>
+          <p class="stars">難しさ ${'★'.repeat(st.level)}${'☆'.repeat(3 - st.level)}</p>
           <p>${st.desc}</p>
           <p class="best">${best}</p>
         </div>`;
