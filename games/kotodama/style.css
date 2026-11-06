@@ -370,57 +370,6 @@
 .t-trap-c {
   color: var(--c-trap);
 }
-.hand {
-  display: flex;
-  gap: 6px;
-  padding: 6px 8px 8px;
-  overflow-x: auto;
-  background: var(--paper);
-  touch-action: pan-x;
-  scrollbar-width: none;
-}
-.hand::-webkit-scrollbar {
-  display: none;
-}
-.hc {
-  flex: 0 0 auto;
-  width: clamp(62px, 19cqw, 84px);
-  height: clamp(84px, 13cqh, 112px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 3px 5px;
-  border: 2px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 3px 0 var(--line);
-  font-family: inherit;
-  color: var(--ink);
-  transition: transform 0.12s;
-}
-.hc .ty {
-  align-self: stretch;
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 900;
-  color: #fff;
-}
-.hc b {
-  font-size: clamp(15px, 5cqw, 20px);
-  line-height: 1.15;
-  word-break: break-all;
-}
-.hc.long b {
-  font-size: clamp(11px, 3.5cqw, 16px);
-  white-space: nowrap;
-  letter-spacing: -0.04em;
-}
-.hc.xlong b {
-  font-size: clamp(9px, 2.9cqw, 13px);
-  white-space: nowrap;
-  letter-spacing: -0.06em;
-}
 .stag {
   margin-top: auto;
   margin-bottom: 2px;
@@ -428,36 +377,273 @@
   font-weight: 800;
   color: var(--ink-soft);
 }
-.hc .sub {
-  font-size: 11px;
+
+/* ---------- 手札: 手に持った扇形 ---------- */
+.app {
+  --hand-h: clamp(128px, 24cqh, 215px);
+}
+.hand {
+  position: relative;
+  flex: 0 0 auto;
+  height: var(--hand-h);
+  overflow: hidden;
+  touch-action: none;
+  background: radial-gradient(ellipse at 50% 120%, #3d4270, #1d2038 70%);
+  --cw: clamp(64px, min(22cqw, 11.5cqh), 98px);
+}
+.palm {
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: calc(var(--cw) * 2.1);
+  transform: translateX(-50%);
+  z-index: 1;
+}
+.palm path {
+  fill: #f6d7b5;
+  stroke: #c9926a;
+  stroke-width: 2;
+}
+.palm .fold {
+  fill: none;
+  stroke: #d9a983;
+}
+.thumb {
+  position: absolute;
+  left: calc(50% - var(--cw) * 0.78);
+  bottom: calc(var(--cw) * -0.32);
+  width: calc(var(--cw) * 0.62);
+  transform: rotate(-12deg);
+  z-index: 3;
+  pointer-events: none;
+}
+.thumb path {
+  fill: #f8dcbc;
+  stroke: #c9926a;
+  stroke-width: 2.5;
+}
+.thumb .nail {
+  fill: #fbe9d6;
+  stroke-width: 1.5;
+}
+.fan {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+.hc {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  width: var(--cw);
+  height: calc(var(--cw) * 1.42);
+  margin-left: calc(var(--cw) / -2);
+  transform-origin: 50% 230%;
+  transition: transform 0.2s cubic-bezier(0.2, 1.2, 0.4, 1), opacity 0.2s;
+}
+.hc .cf {
+  box-shadow: -2px 3px 6px rgba(0, 0, 0, 0.35);
+}
+.hc.sel .cf {
+  box-shadow: 0 0 0 3px var(--accent), 0 8px 16px rgba(0, 0, 0, 0.5);
+}
+.hc.cant .cf {
+  filter: brightness(0.82) saturate(0.7);
+}
+.hand-count {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  z-index: 4;
+  font-size: 10px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ---------- トランプ風のカード ---------- */
+.cf {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 9px;
+  background: #fff;
+  border: 1.5px solid #c9c2b4;
+  color: var(--ink);
+  overflow: hidden;
+  font-family: var(--font);
+  --tc: #888;
+}
+.cf::before {
+  content: '';
+  position: absolute;
+  inset: 18% 12% 22%;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tc) 9%, transparent);
+}
+.cf.t-noun {
+  --tc: var(--c-noun);
+}
+.cf.t-verb {
+  --tc: var(--c-verb);
+}
+.cf.t-part {
+  --tc: var(--c-part);
+}
+.cf.t-aux {
+  --tc: var(--c-aux);
+}
+.cf.t-trap {
+  --tc: var(--c-trap);
+  background: #fff6f6;
+}
+.cn {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  color: var(--tc);
+}
+.cn b {
+  font-size: calc(var(--cw) * 0.2);
+  font-weight: 900;
+}
+.cn i {
+  font-style: normal;
+  font-size: calc(var(--cw) * 0.15);
+}
+.cn.tl {
+  left: 5%;
+  top: 4%;
+}
+.cn.br {
+  right: 5%;
+  bottom: 4%;
+  transform: rotate(180deg);
+}
+.cw {
+  position: absolute;
+  inset: 26% 6% 34%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  font-size: calc(var(--cw) * 0.26);
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--tc);
+  white-space: nowrap;
+  letter-spacing: -0.03em;
+}
+.cf.long .cw {
+  font-size: calc(var(--cw) * 0.19);
+}
+.cf.xlong .cw {
+  font-size: calc(var(--cw) * 0.14);
+}
+.cf.t-trap .cw {
+  font-family: 'Yuji Syuku', serif;
+}
+.cs {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 22%;
+  text-align: center;
+  font-size: calc(var(--cw) * 0.13);
   font-weight: 900;
   color: var(--ink-soft);
 }
-.hc.sel {
-  transform: translateY(-6px);
-  box-shadow: 0 0 0 3px var(--accent), 0 6px 0 var(--line);
+.ct {
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 6%;
+  text-align: center;
+  font-size: calc(var(--cw) * 0.1);
+  font-weight: 800;
+  color: #fff;
+  background: var(--tc);
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.t-noun .ty {
-  background: var(--c-noun);
+.cf.big {
+  --cw: min(52cqw, 230px);
 }
-.t-verb .ty {
-  background: var(--c-verb);
+.cf.mini {
+  --cw: 54px;
 }
-.t-part .ty {
-  background: var(--c-part);
+
+/* カードの詳細 */
+.detail {
+  position: absolute;
+  inset: 0 0 var(--hand-h) 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  background: rgba(10, 12, 28, 0.72);
 }
-.t-aux .ty {
-  background: var(--c-aux);
+.dt-card {
+  --cw: min(52cqw, 230px);
+  width: var(--cw);
+  height: calc(var(--cw) * 1.42);
+  animation: dt-in 0.25s cubic-bezier(0.2, 1.4, 0.4, 1);
+  cursor: pointer;
 }
-.t-trap {
-  background: #fff1f1;
+.dt-card .cf {
+  box-shadow: 0 0 0 4px var(--accent), 0 12px 30px rgba(0, 0, 0, 0.6);
+}
+@keyframes dt-in {
+  from {
+    transform: translateY(40%) scale(0.6) rotate(-6deg);
+    opacity: 0;
+  }
+}
+.dt-text {
+  max-width: 340px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.dt-hint {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--accent);
+  animation: glow-t 1s ease-in-out infinite;
+}
+.dt-hint .warn {
+  color: #ff9a9a;
+}
+@keyframes glow-t {
+  50% {
+    opacity: 0.55;
+  }
+}
+.dt-row {
+  display: flex;
+  gap: 8px;
+}
+.chip.mana {
+  background: rgba(80, 160, 255, 0.3);
+}
+.chip.mana.done {
+  outline: 1px solid rgba(160, 210, 255, 0.7);
+}
+.info-row .hint {
+  flex: 1;
+}
+.info-row {
+  align-items: center;
 }
 .t-trap .ty {
   background: var(--c-trap);
-}
-.t-trap b {
-  color: var(--c-trap);
-  font-family: 'Yuji Syuku', serif;
 }
 
 /* ---------- トラップの確認 ---------- */
@@ -843,4 +1029,204 @@
 }
 .field.me .slot.target .sent {
   outline: 3px solid var(--accent);
+}
+
+/* タイトルのデッキ選び（4つ） */
+.decks {
+  grid-template-columns: repeat(2, 1fr) !important;
+}
+.deck.off {
+  opacity: 0.5;
+}
+.build-btn {
+  min-height: 0;
+  padding: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+/* ---------- デッキ構築 ---------- */
+.screen.build {
+  padding: 0;
+  place-items: stretch;
+  background: var(--paper);
+}
+.build-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: var(--ink);
+  padding-top: env(safe-area-inset-top);
+}
+.b-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--line);
+}
+.b-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 18px;
+}
+.b-count {
+  font-weight: 900;
+  font-size: 16px;
+  color: var(--primary-dark);
+}
+.b-count.ok {
+  color: var(--good);
+}
+.b-summary {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 6px 10px;
+}
+.curve {
+  display: flex;
+  gap: 3px;
+  height: 44px;
+  align-items: flex-end;
+}
+.curve div {
+  position: relative;
+  width: 16px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.curve i {
+  display: block;
+  background: #4f8fe8;
+  border-radius: 3px 3px 0 0;
+  min-height: 2px;
+}
+.curve span {
+  font-size: 9px;
+  text-align: center;
+}
+.btypes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-size: 11px;
+  font-weight: 900;
+}
+.b-tools,
+.b-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 10px 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.chipbtn {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  padding: 2px 9px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  color: var(--ink);
+}
+.chipbtn.on {
+  background: var(--ink);
+  color: #fff;
+}
+.b-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px;
+  touch-action: pan-y;
+  border-top: 1px solid #e5dcc8;
+}
+.brow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border-bottom: 1px solid #eee3cc;
+}
+.brow.has {
+  background: #fff4d6;
+}
+.brow .cf.mini {
+  flex: 0 0 auto;
+  width: 54px;
+  height: 77px;
+}
+.bdesc {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+.bdesc em {
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--c-trap);
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+}
+.bdesc small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+.bctl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.bctl button {
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--ink);
+}
+.bctl button:disabled {
+  opacity: 0.3;
+}
+.bctl span {
+  width: 30px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 900;
+}
+.b-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  border-top: 2px solid var(--line);
+}
+.b-msg {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--primary-dark);
+}
+.b-msg.ok {
+  color: var(--good);
+}
+.b-foot .btn {
+  width: auto;
+  min-height: 0;
+  padding: 8px 14px;
+  font-size: 15px;
+}
+.b-foot .btn:disabled {
+  opacity: 0.4;
 }

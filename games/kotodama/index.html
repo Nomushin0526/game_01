@@ -31,7 +31,19 @@
         <button id="btn-end" class="end-btn" type="button">ターン終了</button>
       </div>
       <div id="info" class="info"></div>
-      <div id="hand" class="hand"></div>
+      <div id="hand" class="hand">
+        <svg class="palm" viewBox="0 0 200 110" aria-hidden="true">
+          <path d="M28 110 C26 72 44 44 72 38 L128 38 C156 44 174 72 172 110 Z" />
+          <path class="fold" d="M70 70 C90 78 112 78 132 70" />
+        </svg>
+        <div id="fan" class="fan"></div>
+        <svg class="thumb" viewBox="0 0 90 120" aria-hidden="true">
+          <path d="M22 120 C14 96 8 70 16 50 C24 30 40 22 54 30 C66 38 64 58 58 74 C54 88 58 104 64 120 Z" />
+          <path class="nail" d="M24 52 C28 40 40 34 50 38 C46 44 36 48 24 52 Z" />
+        </svg>
+        <div id="hand-count" class="hand-count"></div>
+      </div>
+      <div id="detail" class="detail hidden"></div>
 
       <div id="banner" class="banner"></div>
       <div id="cutin" class="cutin hidden"></div>
@@ -45,6 +57,7 @@
           <p class="lead">名詞に 助詞・動詞・助動詞 を重ねて文を作れ。<br />「りんご」より「りんごを食べちゃう」の方が強い。</p>
           <p class="pick">デッキを選ぶ</p>
           <div id="decks" class="decks"></div>
+          <button id="btn-build" class="btn btn-ghost build-btn" type="button">📝 デッキを組む</button>
           <div class="btn-col">
             <button id="btn-start" class="btn btn-primary">デュエル開始</button>
             <button id="btn-howto" class="btn btn-ghost">あそびかた</button>
@@ -61,10 +74,14 @@
         <div class="card-panel howto">
           <h2>あそびかた</h2>
           <h3>勝ち方</h3>
-          <p>相手のHP（130）を0にしたら勝ち。山札がなくなると「言葉切れ」で、ターンのはじめに10・20・30…とダメージが増えていく。</p>
+          <p>相手のHP（100）を0にしたら勝ち。山札がなくなると「言葉切れ」で、ターンのはじめに10・20・30…とダメージが増えていく。</p>
+          <h3>手札の操作</h3>
+          <p>手札は手に持った扇形。<b>指を左右にふって選ぶ</b> → <b>タップで詳しく見る</b> → <b>もう一度タップで場に出す</b>。</p>
+          <h3>マナ（コスト）</h3>
+          <p>カードの左上の数字がコスト。<b>毎ターン1枚、手札をマナにできる</b>（詳しく見る画面の「💧マナにする」）。マナの数だけ、そのターンにカードを出せます。マナは毎ターン元に戻ります。助詞はコスト0。</p>
           <h3>自分のターンにできること</h3>
           <p>
-            ① <b class="c-noun">名詞</b>を場に出す（<b>1ターン1枚</b>・場は3つまで）<br />
+            ① <b class="c-noun">名詞</b>を場に出す（マナがあれば何枚でも・場は3つまで）<br />
             ② 場の名詞に <b class="c-part">助詞</b>→<b class="c-verb">動詞</b>→<b class="c-aux">助動詞</b> の順で重ねる（何枚でも）<br />
             ③ <b class="c-trap">トラップ</b>を伏せる<br />
             ④ 場の文を<b>発動</b>（1つの文は1ターン1回）<br />
@@ -89,6 +106,8 @@
           </p>
           <h3>攻撃と守備</h3>
           <p>相手の場に言葉があると、まずそれを攻撃しないといけません。攻撃が守備（名詞の強さ＋重ねた枚数×5）より大きければ破壊して、あまりは相手に貫通。届かないと差の分だけ自分が反動ダメージ。場が空なら直接攻撃。動詞のない言葉は1回発動すると消えます（言いっぱなし）。動詞を重ねると、食べる・投げるなど<b>使うとなくなる</b>文と、振り回す・かみつく・すすめるなど<b>場に残って毎ターン使える</b>文になります。</p>
+          <h3>デッキ構築</h3>
+          <p>タイトルの「デッキを組む」で、全カードから30枚のマイデッキを作れます。同じカードは3枚まで、言葉狩りは制限カードで1枚まで。</p>
           <h3>トラップ</h3>
           <p>
             伏せておくと、相手の行動に反応して「発動する？」と聞いてきます。<br />
@@ -99,6 +118,31 @@
             助動詞「<b class="c-aux">ます</b>」を付けた丁寧な文は、トラップを受けません。
           </p>
           <button class="btn btn-primary" data-close="howto">とじる</button>
+        </div>
+      </section>
+
+      <!-- デッキ構築 -->
+      <section id="screen-build" class="screen build hidden">
+        <div class="build-panel">
+          <div class="b-head">
+            <button id="b-back" class="mini-btn" type="button">← 戻る</button>
+            <h2>デッキ構築</h2>
+            <span id="b-count" class="b-count">0 / 30</span>
+          </div>
+          <div id="b-summary" class="b-summary"></div>
+          <div class="b-tools">
+            <span>ひな形：</span>
+            <button class="chipbtn" data-preset="food" type="button">🍎食べ物</button>
+            <button class="chipbtn" data-preset="tool" type="button">🔨道具</button>
+            <button class="chipbtn" data-preset="animal" type="button">🐻動物</button>
+            <button class="chipbtn" data-clear type="button">全部外す</button>
+          </div>
+          <div id="b-filter" class="b-filter"></div>
+          <div id="b-list" class="b-list"></div>
+          <div class="b-foot">
+            <span id="b-msg" class="b-msg"></span>
+            <button id="b-save" class="btn btn-primary" type="button">保存して使う</button>
+          </div>
         </div>
       </section>
 

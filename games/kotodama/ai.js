@@ -25,8 +25,10 @@
   }
 
   // 手札から、この文にいちばん合う 助詞・動詞・助動詞 の組み合わせを探す
-  function bestBuild(G, me, slot) {
+  const free = (p) => p.mana - p.manaUsed;
+  function bestBuild(G, me, slot, budget) {
     const p = G.p[me];
+    if (budget === undefined) budget = free(p);
     const s = p.field[slot];
     const idx = (type) => [null].concat(p.hand.map((k, i) => (CARDS[k].type === type ? i : -1)).filter((i) => i >= 0));
     const parts = !s.part && !s.verb ? idx('part') : [null];
@@ -46,6 +48,7 @@
             plan.push(ai);
           }
           if (pi !== null && vi === null && !t.verb) continue; // 助詞だけ置いても意味がない
+          if (plan.reduce((a, i) => a + CARDS[p.hand[i]].cost, 0) > budget) continue; // マナが足りない
           const v = score(G, me, t) - plan.length * 1.5; // カードを使うコスト
           if (v > best.v + 0.5) best = { v, plan };
         }
@@ -56,14 +59,15 @@
   function pickNoun(G, me) {
     const p = G.p[me];
     let best = null;
+    const budget = free(p);
     p.hand.forEach((k, i) => {
-      if (CARDS[k].type !== 'noun') return;
+      if (CARDS[k].type !== 'noun' || CARDS[k].cost > budget) return;
       const tmp = { p: G.p.slice() };
       tmp.p[me] = Object.assign({}, p, { field: p.field.slice() });
       const slot = p.field.indexOf(null);
       tmp.p[me].field[slot] = K.newSentence(k);
       tmp.p[me].hand = p.hand.filter((_, j) => j !== i);
-      const b = bestBuild(tmp, me, slot);
+      const b = bestBuild(tmp, me, slot, budget - CARDS[k].cost);
       const v = b.v + K.defense(tmp.p[me].field[slot]) * 0.2;
       if (!best || v > best.v) best = { v, i };
     });
@@ -89,21 +93,20 @@
   async function run(G, me, api) {
     const p = G.p[me];
     const op = G.p[1 - me];
-    // 1. トラップを伏せる
-    for (let i = p.hand.length - 1; i >= 0; i--) {
-      if (CARDS[p.hand[i]].type !== 'trap') continue;
-      const ts = p.traps.indexOf(null);
-      if (ts < 0) break;
-      await api.setTrap(me, i, ts);
+    // 0. マナをためる（1ターン1枚）
+    if (!p.charged) {
+      const ci = pickCharge(G, me);
+      if (ci >= 0) await api.charge(me, ci);
       if (G.over) return;
     }
-    // 2. 名詞を出す（1ターン1回）
-    if (!p.summoned && p.field.includes(null)) {
-      const n = pickNoun(G, me);
-      if (n) await api.playNoun(me, n.i, p.field.indexOf(null));
+    // 1. 名詞を出す（マナがあるだけ。場は3つまで）
+    for (let n = 0; n < 2 && p.field.includes(null); n++) {
+      const pick = pickNoun(G, me);
+      if (!pick) break;
+      await api.playNoun(me, pick.i, p.field.indexOf(null));
       if (G.over) return;
     }
-    // 3. 言葉を重ねる（強い文から）
+    // 2. 言葉を重ねる（強い文から）
     for (let round = 0; round < 3; round++) {
       let did = false;
       for (let slot = 0; slot < K.SLOTS; slot++) {
@@ -114,12 +117,20 @@
         for (const key of keys) {
           const hi = p.hand.indexOf(key);
           if (hi < 0 || !p.field[slot] || !K.canAttach(p.field[slot], key)) break;
-          await api.attachCard(me, hi, slot);
+          if (!(await api.attachCard(me, hi, slot))) break;
           if (G.over) return;
         }
         did = true;
       }
       if (!did) break;
+    }
+    // 3. 残ったマナでトラップを伏せる
+    for (let i = p.hand.length - 1; i >= 0; i--) {
+      if (CARDS[p.hand[i]].type !== 'trap' || CARDS[p.hand[i]].cost > free(p)) continue;
+      const ts = p.traps.indexOf(null);
+      if (ts < 0) break;
+      await api.setTrap(me, i, ts);
+      if (G.over) return;
     }
     // 4. 発動する（妨害 → デバフ → バフ → 攻撃 → 回復・守り の順に考える）
     const PRI = { break: 0, debuff: 1, buff: 2, attack: 3, heal: 4, guard: 5 };
@@ -184,6 +195,29 @@
       return best === undefined ? undefined : best;
     }
     return undefined;
+  }
+
+  // マナにする手札を選ぶ（いちばん要らなそうな物）。しないなら -1
+  function pickCharge(G, me) {
+    const p = G.p[me];
+    // マナは5〜6あれば十分。手札が少ないときは ためない
+    if (p.hand.length <= 1 || (p.mana >= 3 && p.hand.length <= 2) || (p.mana >= 5 && p.hand.length <= 4) || p.mana >= 7) return -1;
+    const nouns = p.hand.filter((k) => CARDS[k].type === 'noun').concat(p.field.filter(Boolean).map((x) => x.noun));
+    const parts = p.hand.filter((k) => CARDS[k].type === 'part').length;
+    let best = -1;
+    let bv = Infinity;
+    p.hand.forEach((k, i) => {
+      const c = CARDS[k];
+      let v;
+      if (c.type === 'noun') v = c.power + (p.field.includes(null) ? 4 : -6);
+      else if (c.type === 'verb') v = nouns.some((n) => CARDS[n].kinds.some((kd) => c.fit[kd] >= 1)) ? 18 : 6;
+      else if (c.type === 'part') v = parts > 1 ? 6 : 15;
+      else if (c.type === 'aux') v = 7;
+      else v = p.traps.includes(null) ? (k === 't_hunt' ? 22 : 12) : 2;
+      if (c.cost > p.mana + 2) v -= 5;
+      if (v < bv) (bv = v), (best = i);
+    });
+    return best;
   }
 
   // 相手の行動に、伏せたトラップを使うか。opts: [{ ts, id }]。使うなら opts の番号、使わないなら -1

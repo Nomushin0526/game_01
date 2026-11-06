@@ -29,6 +29,9 @@
 
   let G = null;
   let deckChoice = storage.get('koto.deck', 'food');
+  let myDeck = storage.get('koto.mydeck', []);
+  const deckList = (key) => (key === 'mine' ? myDeck.slice() : K.DECKS[key].cards.slice());
+  const deckName = (key) => (key === 'mine' ? 'マイデッキ' : K.DECKS[key].name);
 
   // ---------- 対局の準備 ----------
   function newPlayer(deckKey) {
@@ -36,17 +39,20 @@
       deckKey,
       hp: K.MAX_HP,
       shield: 0,
-      deck: K.shuffle(K.DECKS[deckKey].cards.slice(), rng),
+      deck: K.shuffle(deckList(deckKey), rng),
       hand: [],
       field: new Array(SLOTS).fill(null),
       traps: new Array(SLOTS).fill(null),
-      summoned: false,
+      mana: 0, // マナゾーンの枚数
+      manaUsed: 0, // このターンに使ったマナ
+      charged: false, // このターンにマナをためたか
     };
   }
   function newGame() {
+    if (deckChoice === 'mine' && K.checkDeck(myDeck).length) deckChoice = 'food';
     const keys = Object.keys(K.DECKS).filter((k) => k !== deckChoice);
     const opDeck = keys[Math.floor(rng() * keys.length)];
-    G = { p: [newPlayer(deckChoice), newPlayer(opDeck)], turn: 0, turnNo: 0, over: false, busy: true, sel: null, selSlot: null, targeting: null, log: [] };
+    G = { p: [newPlayer(deckChoice), newPlayer(opDeck)], turn: 0, turnNo: 0, over: false, busy: true, sel: null, selSlot: null, targeting: null, hsel: 0, detail: false, msg: '', log: [] };
     for (const p of G.p) for (let i = 0; i < K.START_HAND; i++) p.hand.push(p.deck.pop());
     const first = rng() < 0.5 ? 0 : 1;
     log(`相手は「${K.DECKS[opDeck].name}」。${first === 0 ? 'あなた' : '相手'}の先攻！`);
@@ -60,6 +66,13 @@
   const who = (pi) => (pi === 0 ? 'あなた' : '相手');
   const myTurn = () => G && !G.over && !G.busy && G.turn === 0;
   const canAttack = () => G.turnNo > 1; // 先攻の最初のターンは攻撃できない
+  const free = (p) => p.mana - p.manaUsed;
+  function pay(p, key) {
+    const c = CARDS[key].cost;
+    if (free(p) < c) return false;
+    p.manaUsed += c;
+    return true;
+  }
 
   async function startTurn(pi) {
     if (G.over) return;
@@ -67,7 +80,8 @@
     G.turnNo++;
     const p = G.p[pi];
     p.shield = 0;
-    p.summoned = false;
+    p.manaUsed = 0;
+    p.charged = false;
     for (const s of p.field) {
       if (!s) continue;
       s.used = false;
@@ -120,10 +134,9 @@
   async function playNoun(pi, hi, slot) {
     const p = G.p[pi];
     const key = p.hand[hi];
-    if (CARDS[key].type !== 'noun' || p.summoned || p.field[slot]) return false;
+    if (CARDS[key].type !== 'noun' || p.field[slot] || !pay(p, key)) return false;
     p.hand.splice(hi, 1);
     p.field[slot] = K.newSentence(key);
-    p.summoned = true;
     log(`${who(pi)}が「${CARDS[key].word}」を場に出した`);
     sfx.card();
     flash(pi, slot);
@@ -135,7 +148,7 @@
     const p = G.p[pi];
     const key = p.hand[hi];
     const s = p.field[slot];
-    if (!K.canAttach(s, key)) return false;
+    if (!K.canAttach(s, key) || !pay(p, key)) return false;
     p.hand.splice(hi, 1);
     p.field[slot] = K.attach(s, key);
     log(`${who(pi)}：「${K.text(p.field[slot])}」`);
@@ -159,13 +172,27 @@
   async function setTrap(pi, hi, ts) {
     const p = G.p[pi];
     const key = p.hand[hi];
-    if (CARDS[key].type !== 'trap' || p.traps[ts]) return false;
+    if (CARDS[key].type !== 'trap' || p.traps[ts] || !pay(p, key)) return false;
     p.hand.splice(hi, 1);
     p.traps[ts] = key;
     log(`${who(pi)}がカードを1枚伏せた`);
     sfx.card();
     render();
     await sleep(pi === 1 ? 450 : 100);
+    return true;
+  }
+
+  // 手札を1枚マナにする（1ターン1回）
+  async function charge(pi, hi) {
+    const p = G.p[pi];
+    if (p.charged || hi < 0 || hi >= p.hand.length) return false;
+    const key = p.hand.splice(hi, 1)[0];
+    p.mana++;
+    p.charged = true;
+    log(`${who(pi)}が「${pi === 0 ? CARDS[key].word : '？'}」をマナにした（マナ${p.mana}）`);
+    sfx.card();
+    render();
+    await sleep(pi === 1 ? 450 : 80);
     return true;
   }
 
@@ -503,24 +530,37 @@
       ${s.sleep ? '<div class="zz">💤</div>' : ''}
       ${s.used ? `<div class="used-tag">${s.napping ? 'おやすみ中💤' : '発動ずみ'}</div>` : ''}</div>`;
   }
-  function handCardHTML(key, i, sel) {
+  // トランプ風のカードの表面
+  function statText(key) {
     const c = CARDS[key];
-    let sub = '';
     if (c.type === 'noun') {
       const ev = K.evaluate(K.newSentence(key));
-      sub = `${ICON[ev.act]}${c.power}`;
-    } else if (c.type === 'verb') sub = `${ICON[c.act]}${K.ACT[c.act]}`;
-    else if (c.type === 'part') sub = c.any ? `×${c.any}` : '×1.5';
-    else if (c.type === 'aux') sub = `×${c.mult}`;
-    else sub = '伏せる';
-    return `<button class="hc t-${c.type}${sel ? ' sel' : ''}${c.word.length >= 6 ? ' xlong' : c.word.length >= 4 ? ' long' : ''}" data-hand="${i}" type="button"><span class="ty">${K.TYPE_NAME[c.type]}</span><b>${c.word}</b><span class="sub">${sub}</span></button>`;
+      return `${ICON[ev.act]}${c.power}`;
+    }
+    if (c.type === 'verb') return `${ICON[c.act]}${K.ACT[c.act]}`;
+    if (c.type === 'part') return c.any ? `×${c.any}` : '×1.5';
+    if (c.type === 'aux') return `×${c.mult}`;
+    return '伏せる';
+  }
+  function cardFace(key, cls) {
+    const c = CARDS[key];
+    const len = c.word.length;
+    const sz = len >= 6 ? ' xlong' : len >= 4 ? ' long' : '';
+    const sub = c.type === 'noun' ? c.kinds.map((k) => K.KIND[k]).join('・') : K.TYPE_NAME[c.type];
+    return `<div class="cf t-${c.type}${sz} ${cls || ''}">
+      <div class="cn tl"><b>${c.cost}</b><i>${K.SUIT[c.type]}</i></div>
+      <div class="cn br"><b>${c.cost}</b><i>${K.SUIT[c.type]}</i></div>
+      <div class="cw">${c.word}</div>
+      <div class="cs">${statText(key)}</div>
+      <div class="ct">${sub}</div></div>`;
   }
   function barHTML(pi) {
     const p = G.p[pi];
     const pct = Math.max(0, (p.hp / K.MAX_HP) * 100);
     return `<div class="hp"><div class="hp-fill${pct < 30 ? ' low' : ''}" style="width:${pct}%"></div><span>HP ${Math.max(0, p.hp)}</span></div>
       ${p.shield ? `<span class="chip">🛡${p.shield}</span>` : ''}
-      <span class="chip">山札${p.deck.length}</span>${pi === 1 ? `<span class="chip">手札${p.hand.length}</span>` : ''}`;
+      <span class="chip mana${p.charged ? ' done' : ''}" title="マナ">💧${free(p)}/${p.mana}</span>
+      <span class="chip">山${p.deck.length}</span>${pi === 1 ? `<span class="chip">手${p.hand.length}</span>` : ''}`;
   }
 
   // 手札で選んだカードを置ける場所
@@ -530,8 +570,9 @@
     const p = G.p[0];
     const key = p.hand[G.sel.hand];
     const c = CARDS[key];
+    if (free(p) < c.cost) return out;
     if (c.type === 'noun') {
-      if (!p.summoned) p.field.forEach((s, i) => !s && out.slots.set(i, null));
+      p.field.forEach((s, i) => !s && out.slots.set(i, null));
     } else if (c.type === 'trap') p.traps.forEach((t, i) => !t && out.traps.add(i));
     else p.field.forEach((s, i) => s && K.canAttach(s, key) && out.slots.set(i, K.evaluate(K.attach(s, key))));
     return out;
@@ -567,10 +608,86 @@
       const el = $(f.pi === 0 ? 'me-field' : 'op-field').children[f.slot];
       if (el) el.classList.add(f.cls);
     }
-    $('hand').innerHTML = me.hand.map((k, i) => handCardHTML(k, i, G.sel && G.sel.hand === i)).join('');
+    renderHand();
     $('log').innerHTML = G.log.slice(0, 2).map((l) => `<div>${l}</div>`).join('') || '<div>&nbsp;</div>';
     $('btn-end').disabled = !myTurn();
     renderInfo();
+  }
+
+  // ---------- 手札（手に持った扇形） ----------
+  function renderHand() {
+    const me = G.p[0];
+    const n = me.hand.length;
+    if (G.hsel >= n) G.hsel = Math.max(0, n - 1);
+    const step = 13; // 1枚ごとの角度
+    $('fan').innerHTML = me.hand
+      .map((k, i) => {
+        const d = i - G.hsel;
+        const far = Math.abs(d);
+        const ok = myTurn() && free(me) >= CARDS[k].cost;
+        const st = `transform: rotate(${d * step}deg) translateY(${d === 0 ? -16 : far * 4}px); z-index:${50 - far}; opacity:${far > 4 ? 0 : 1}`;
+        return `<div class="hc${d === 0 ? ' sel' : ''}${ok ? '' : ' cant'}" data-hand="${i}" style="${st}">${cardFace(k)}</div>`;
+      })
+      .join('');
+    $('hand-count').textContent = n ? `${G.hsel + 1} / ${n}` : '手札なし';
+    renderDetail();
+  }
+  function renderDetail() {
+    const el = $('detail');
+    const me = G.p[0];
+    const key = me.hand[G.hsel];
+    if (!G.detail || !key || G.over) return el.classList.add('hidden');
+    const c = CARDS[key];
+    const reason = whyCant(key);
+    el.classList.remove('hidden');
+    el.innerHTML = `<div class="dt-card" data-play>${cardFace(key, 'big')}</div>
+      <div class="dt-text"><b class="t-${c.type}-c">【${K.TYPE_NAME[c.type]}】${c.word}</b>　コスト${c.cost}<br>${K.describe(key)}</div>
+      <div class="dt-hint">${reason ? `<span class="warn">${reason}</span>` : 'もう一度タップで場に出す'}</div>
+      <div class="dt-row"><button class="mini-btn" data-charge ${!myTurn() || me.charged ? 'disabled' : ''}>💧マナにする${me.charged ? '（済）' : ''}</button><button class="mini-btn" data-close-detail>とじる</button></div>`;
+  }
+  // このカードを今出せない理由（出せるなら ''）
+  function whyCant(key) {
+    const me = G.p[0];
+    const c = CARDS[key];
+    if (!myTurn()) return '自分のターンに出せます';
+    if (free(me) < c.cost) return `マナが足りない（コスト${c.cost}・残り${free(me)}）。手札をマナにしよう`;
+    if (c.type === 'noun' && !me.field.includes(null)) return '場がいっぱい（3つまで）';
+    if (c.type === 'trap' && !me.traps.includes(null)) return '伏せる場所がいっぱい';
+    if (c.type === 'part' && !me.field.some((x) => x && K.canAttach(x, key))) return '動詞を重ねる前の名詞にだけ付けられる';
+    if (c.type === 'verb' && !me.field.some((x) => x && K.canAttach(x, key))) return '動詞のない名詞が場にない';
+    if (c.type === 'aux' && !me.field.some((x) => x && K.canAttach(x, key))) return '動詞のある文にだけ付けられる';
+    return '';
+  }
+  // 選んでいる手札を場に出す
+  async function playSelected() {
+    const me = G.p[0];
+    const hi = G.hsel;
+    const key = me.hand[hi];
+    if (!key || !myTurn()) return;
+    const reason = whyCant(key);
+    if (reason) {
+      G.detail = true;
+      sfx.tap();
+      return render();
+    }
+    const c = CARDS[key];
+    G.detail = false;
+    G.busy = true;
+    if (c.type === 'noun') await playNoun(0, hi, me.field.indexOf(null));
+    else if (c.type === 'trap') await setTrap(0, hi, me.traps.indexOf(null));
+    else {
+      const ok = me.field.map((x, i) => (x && K.canAttach(x, key) ? i : -1)).filter((i) => i >= 0);
+      if (ok.length === 1) await attachCard(0, hi, ok[0]);
+      else {
+        // 重ねる先が2つ以上: 光っている文をタップで選ぶ
+        G.sel = { hand: hi };
+        G.busy = false;
+        sfx.tap();
+        return render();
+      }
+    }
+    if (!checkEnd()) G.busy = false;
+    render();
   }
 
   function renderInfo() {
@@ -584,21 +701,17 @@
       const op = G.p[1];
       const direct = ev.act === 'attack' && (ev.slip || !op.field.some(Boolean));
       const how = {
-        attack: '攻撃する相手の言葉をタップ（守備より大きいと破壊・あまりは貫通。守備に届かないと差の分だけ反動）',
+        attack: '攻撃する相手の言葉をタップ',
         buff: '強くする自分の文をタップ',
-        debuff: `弱らせる相手の文をタップ${ev.sleep ? '（次のターン動けなくなる）' : ''}`,
+        debuff: `弱らせる相手の文をタップ${ev.sleep ? '（次のターン眠らせる）' : ''}`,
       }[ev.act];
-      el.innerHTML = `<p class="hint"><b>「${K.text(s)}」${ICON[ev.act]}${ev.value}</b>　${how}</p>
-        <div class="info-row">${direct ? '<button class="mini-btn primary" data-direct>相手に直接攻撃</button>' : ''}<button class="mini-btn" data-cancel>やめる</button></div>`;
+      el.innerHTML = `<div class="info-row"><p class="hint"><b>「${K.text(s)}」${ICON[ev.act]}${ev.value}</b> ${how}</p>
+        ${direct ? '<button class="mini-btn primary" data-direct>直接攻撃</button>' : ''}<button class="mini-btn" data-cancel>やめる</button></div>`;
       return;
     }
     if (G.sel) {
       const key = me.hand[G.sel.hand];
-      const c = CARDS[key];
-      const vt = validTargets();
-      let tip = '光っている場所をタップ';
-      if (!vt.slots.size && !vt.traps.size) tip = c.type === 'noun' && me.summoned ? '名詞はこのターンもう出した（1ターン1枚）' : c.type === 'aux' ? '動詞のある文にだけ付けられる' : c.type === 'part' ? '動詞を重ねる前の名詞にだけ付けられる' : '置ける場所がない';
-      el.innerHTML = `<p class="hint"><b class="t-${c.type}-c">【${K.TYPE_NAME[c.type]}】${c.word}</b>　${K.describe(key)}</p><p class="hint sub">${tip}</p>`;
+      el.innerHTML = `<div class="info-row"><p class="hint"><b class="t-${CARDS[key].type}-c">${CARDS[key].word}</b> を重ねる文をタップ</p><button class="mini-btn" data-cancel>やめる</button></div>`;
       return;
     }
     if (G.selSlot !== null && me.field[G.selSlot]) {
@@ -606,32 +719,90 @@
       const ev = K.evaluate(s);
       const no = s.used
         ? s.napping
-          ? '（眠っていて動けない）'
-          : '（このターンは発動ずみ）'
+          ? '眠っていて動けない'
+          : 'このターンは発動ずみ'
         : ev.act === 'attack' && !canAttack()
-          ? '（先攻1ターン目は攻撃できない）'
+          ? '先攻1ターン目は攻撃できない'
           : ev.act === 'buff' && !me.field.some((x, j) => x && j !== G.selSlot)
-            ? '（強くする自分の文がない）'
+            ? '強くする自分の文がない'
             : ev.act === 'debuff' && !G.p[1].field.some(Boolean)
-              ? '（相手の場に言葉がない）'
+              ? '相手の場に言葉がない'
               : '';
-      el.innerHTML = `<p class="hint"><b>「${K.text(s)}」</b>　${ICON[ev.act]}${K.ACT[ev.act]} ${ev.value}${ev.consume ? '（使うとなくなる）' : '（場に残る）'}<br><span class="sub">${K.ACT_DESC[ev.act]}</span><br><span class="sub">${ev.notes.join('・') || 'ほかの言葉を重ねると強くなる'}</span></p>
-        <div class="info-row"><button class="mini-btn primary" data-activate ${no ? 'disabled' : ''}>発動！${no}</button><button class="mini-btn" data-cancel>とじる</button></div>`;
+      el.innerHTML = `<div class="info-row"><p class="hint"><b>「${K.text(s)}」</b> ${ICON[ev.act]}${K.ACT[ev.act]}${ev.act === 'break' ? '' : ev.value}・${ev.consume ? '1回きり' : '場に残る'}<br><span class="sub">${no || ev.notes.join('・') || K.ACT_DESC[ev.act]}</span></p>
+        <button class="mini-btn primary" data-activate ${no ? 'disabled' : ''}>発動！</button><button class="mini-btn" data-cancel>✕</button></div>`;
       return;
     }
-    el.innerHTML = `<p class="hint">手札をタップして場に出す・言葉を重ねる。場の言葉をタップで発動。<br><span class="sub">例：「りんご」→「を」→「食べる」と重ねると回復量アップ</span></p>`;
+    el.innerHTML = `<p class="hint">手札を左右にふって選ぶ → タップで詳しく → もう一度で出す<br><span class="sub">場の言葉はタップで発動。毎ターン1枚マナにできる💧</span></p>`;
   }
 
-  // ---------- タップ ----------
-  $('hand').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-hand]');
-    if (!b || !myTurn()) return;
-    const i = +b.dataset.hand;
-    G.sel = G.sel && G.sel.hand === i ? null : { hand: i };
-    G.selSlot = null;
-    G.targeting = null;
-    sfx.tap();
-    render();
+  // ---------- 手札の操作: 左右にふって選ぶ・タップで詳細・もう一度で出す ----------
+  (function handGestures() {
+    const el = $('hand');
+    let sx = 0;
+    let lx = 0;
+    let moved = false;
+    let down = false;
+    const STEP = 30;
+    el.addEventListener('pointerdown', (e) => {
+      if (!G || G.over) return;
+      down = true;
+      moved = false;
+      sx = lx = e.clientX;
+      el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!down) return;
+      const dx = e.clientX - lx;
+      if (Math.abs(e.clientX - sx) > 8) moved = true;
+      if (Math.abs(dx) < STEP) return;
+      const n = G.p[0].hand.length;
+      const next = Math.max(0, Math.min(n - 1, G.hsel + (dx > 0 ? -1 : 1))); // 扇を指でなでて回す
+      lx = e.clientX;
+      if (next !== G.hsel) {
+        G.hsel = next;
+        G.detail = false;
+        audio.tone(900, 0.025, { type: 'square', vol: 0.04 });
+        renderHand();
+      }
+    });
+    el.addEventListener('pointerup', (e) => {
+      if (!down) return;
+      down = false;
+      if (moved) return;
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      const card = hit && hit.closest('[data-hand]');
+      if (G.sel) G.sel = null;
+      if (card && +card.dataset.hand !== G.hsel) {
+        G.hsel = +card.dataset.hand;
+        G.detail = false;
+        sfx.tap();
+        return render();
+      }
+      if (!G.detail) {
+        G.detail = true;
+        sfx.tap();
+        return render();
+      }
+      playSelected();
+    });
+    el.addEventListener('pointercancel', () => (down = false));
+  })();
+  $('detail').addEventListener('click', async (e) => {
+    if (e.target.closest('[data-close-detail]')) {
+      G.detail = false;
+      return render();
+    }
+    if (e.target.closest('[data-charge]')) {
+      if (!myTurn()) return;
+      G.detail = false;
+      await charge(0, G.hsel);
+      return render();
+    }
+    if (e.target.closest('[data-play]')) return playSelected();
+    if (e.target === $('detail')) {
+      G.detail = false;
+      render();
+    }
   });
   $('me-field').addEventListener('click', async (e) => {
     const d = e.target.closest('[data-me]');
@@ -640,15 +811,7 @@
     const p = G.p[0];
     if (G.sel) {
       const key = p.hand[G.sel.hand];
-      const c = CARDS[key];
       const hi = G.sel.hand;
-      if (c.type === 'noun' && !p.field[i] && !p.summoned) {
-        G.sel = null;
-        G.busy = true;
-        await playNoun(0, hi, i);
-        G.busy = false;
-        return render();
-      }
       if (p.field[i] && K.canAttach(p.field[i], key)) {
         G.sel = null;
         G.busy = true;
@@ -660,19 +823,9 @@
     if (G.targeting !== null && G.tmode === 'own' && p.field[i] && i !== G.targeting) return activate(0, G.targeting, i);
     G.sel = null;
     G.targeting = null;
+    G.detail = false;
     G.selSlot = p.field[i] && G.selSlot !== i ? i : null;
     if (G.selSlot !== null) sfx.tap();
-    render();
-  });
-  $('me-traps').addEventListener('click', async (e) => {
-    const d = e.target.closest('[data-trap]');
-    if (!d || !myTurn() || !G.sel) return;
-    const i = +d.dataset.trap;
-    const key = G.p[0].hand[G.sel.hand];
-    if (CARDS[key].type !== 'trap' || G.p[0].traps[i]) return;
-    const hi = G.sel.hand;
-    G.sel = null;
-    await setTrap(0, hi, i);
     render();
   });
   $('op-field').addEventListener('click', (e) => {
@@ -688,6 +841,7 @@
     if (b.dataset.cancel !== undefined) {
       G.targeting = null;
       G.selSlot = null;
+      G.sel = null;
       return render();
     }
     if (b.dataset.direct !== undefined) return activate(0, G.targeting, 'direct');
@@ -708,19 +862,19 @@
 
   // ---------- 画面 ----------
   function show(name) {
-    for (const s of ['title', 'howto', 'result']) $('screen-' + s).classList.toggle('hidden', s !== name);
+    for (const s of ['title', 'howto', 'result', 'build']) $('screen-' + s).classList.toggle('hidden', s !== name);
   }
   function renderDecks() {
-    $('decks').innerHTML = Object.keys(K.DECKS)
-      .map((k) => {
-        const d = K.DECKS[k];
-        return `<button class="deck${k === deckChoice ? ' on' : ''}" data-deck="${k}" type="button"><span class="di">${d.icon}</span><b>${d.name.replace('デッキ', '')}</b><small>${d.desc}</small></button>`;
-      })
+    const mineOk = !K.checkDeck(myDeck).length;
+    const items = Object.keys(K.DECKS).map((k) => ({ k, icon: K.DECKS[k].icon, name: K.DECKS[k].name.replace('デッキ', ''), desc: K.DECKS[k].desc }));
+    items.push({ k: 'mine', icon: '📝', name: 'マイデッキ', desc: mineOk ? '自分で組んだ30枚' : `未完成（${myDeck.length}/30）`, off: !mineOk });
+    $('decks').innerHTML = items
+      .map((d) => `<button class="deck${d.k === deckChoice ? ' on' : ''}${d.off ? ' off' : ''}" data-deck="${d.k}" type="button" ${d.off ? 'disabled' : ''}><span class="di">${d.icon}</span><b>${d.name}</b><small>${d.desc}</small></button>`)
       .join('');
   }
   $('decks').addEventListener('click', (e) => {
     const b = e.target.closest('[data-deck]');
-    if (!b) return;
+    if (!b || b.disabled) return;
     deckChoice = b.dataset.deck;
     storage.set('koto.deck', deckChoice);
     sfx.tap();
@@ -732,10 +886,16 @@
     newGame();
   });
   $('btn-again').addEventListener('click', () => {
+    renderDecks();
     show('title');
   });
   $('btn-howto').addEventListener('click', () => show('howto'));
-  document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => show('title')));
+  document.querySelectorAll('[data-close]').forEach((b) =>
+    b.addEventListener('click', () => {
+      renderDecks();
+      show('title');
+    })
+  );
   function soundLabel() {
     $('btn-sound').textContent = audio.muted ? '🔇 サウンド OFF' : '🔊 サウンド ON';
   }
@@ -744,11 +904,86 @@
     soundLabel();
   });
 
-  const api = { playNoun, attachCard, setTrap, activate, canAttack };
+  // ---------- デッキ構築 ----------
+  let building = [];
+  let bFilter = 'all';
+  const POOL = Object.keys(CARDS).sort((a, b) => {
+    const order = { noun: 0, verb: 1, part: 2, aux: 3, trap: 4 };
+    return order[CARDS[a].type] - order[CARDS[b].type] || CARDS[a].cost - CARDS[b].cost;
+  });
+  function openBuilder() {
+    building = myDeck.slice();
+    bFilter = 'all';
+    show('build');
+    renderBuilder();
+  }
+  function renderBuilder() {
+    const cnt = {};
+    for (const k of building) cnt[k] = (cnt[k] || 0) + 1;
+    const types = {};
+    const curve = [0, 0, 0, 0, 0];
+    for (const k of building) {
+      types[CARDS[k].type] = (types[CARDS[k].type] || 0) + 1;
+      curve[Math.min(4, CARDS[k].cost)]++;
+    }
+    const max = Math.max(1, ...curve);
+    const errs = K.checkDeck(building);
+    $('b-count').textContent = `${building.length} / ${K.DECK_SIZE}`;
+    $('b-count').className = 'b-count' + (building.length === K.DECK_SIZE ? ' ok' : '');
+    $('b-summary').innerHTML =
+      `<div class="curve">${curve.map((v, i) => `<div><i style="height:${(v / max) * 100}%"></i><span>${i}${i === 4 ? '+' : ''}</span></div>`).join('')}</div>` +
+      `<div class="btypes">${['noun', 'verb', 'part', 'aux', 'trap'].map((t) => `<span class="t-${t}-c">${K.SUIT[t]}${K.TYPE_NAME[t]} ${types[t] || 0}</span>`).join('')}</div>`;
+    $('b-filter').innerHTML = [['all', '全部'], ['noun', '名詞'], ['verb', '動詞'], ['part', '助詞'], ['aux', '助動詞'], ['trap', 'トラップ']]
+      .map(([k, n]) => `<button class="chipbtn${bFilter === k ? ' on' : ''}" data-f="${k}" type="button">${n}</button>`)
+      .join('');
+    $('b-list').innerHTML = POOL.filter((k) => bFilter === 'all' || CARDS[k].type === bFilter)
+      .map((k) => {
+        const c = CARDS[k];
+        const n = cnt[k] || 0;
+        const lim = K.maxCopies(k);
+        return `<div class="brow${n ? ' has' : ''}">${cardFace(k, 'mini')}
+          <div class="bdesc"><b>${c.word}</b>${K.LIMITED[k] ? '<em>制限</em>' : ''}<small>${K.describe(k)}</small></div>
+          <div class="bctl"><button data-minus="${k}" ${n ? '' : 'disabled'} type="button">−</button><span>${n}/${lim}</span><button data-plus="${k}" ${n >= lim || building.length >= K.DECK_SIZE ? 'disabled' : ''} type="button">＋</button></div></div>`;
+      })
+      .join('');
+    $('b-save').disabled = !!errs.length;
+    $('b-msg').textContent = errs.length ? errs[0] : 'このデッキで戦えます！';
+    $('b-msg').className = 'b-msg' + (errs.length ? '' : ' ok');
+  }
+  $('screen-build').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    if (b.dataset.f) bFilter = b.dataset.f;
+    else if (b.dataset.plus) building.push(b.dataset.plus);
+    else if (b.dataset.minus) building.splice(building.lastIndexOf(b.dataset.minus), 1);
+    else if (b.dataset.preset) building = K.DECKS[b.dataset.preset].cards.slice();
+    else if (b.dataset.clear !== undefined) building = [];
+    else if (b.id === 'b-save') {
+      myDeck = building.slice();
+      storage.set('koto.mydeck', myDeck);
+      deckChoice = 'mine';
+      storage.set('koto.deck', deckChoice);
+      sfx.win();
+      renderDecks();
+      return show('title');
+    } else if (b.id === 'b-back') {
+      renderDecks();
+      return show('title');
+    } else return;
+    sfx.tap();
+    const y = $('b-list').scrollTop;
+    renderBuilder();
+    $('b-list').scrollTop = y;
+  });
+  $('btn-build').addEventListener('click', openBuilder);
+
+  const api = { playNoun, attachCard, setTrap, activate, canAttack, charge };
   renderDecks();
   soundLabel();
   // タイトルの後ろに場を見せておく
-  G = { p: [newPlayer('food'), newPlayer('animal')], turn: 0, turnNo: 0, over: true, busy: true, sel: null, selSlot: null, targeting: null, log: [] };
+  G = { p: [newPlayer('food'), newPlayer('animal')], turn: 0, turnNo: 0, over: true, busy: true, sel: null, selSlot: null, targeting: null, hsel: 0, detail: false, log: [] };
+  for (let i = 0; i < 5; i++) G.p[0].hand.push(G.p[0].deck.pop());
+  G.hsel = 2;
   render();
   window.KotoDebug = { get G() { return G; }, api };
 })();

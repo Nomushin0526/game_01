@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  const MAX_HP = 130;
+  const MAX_HP = 100;
   const SLOTS = 3; // 言葉ゾーン・伏せゾーンの数
   const HAND_MAX = 8;
   const START_HAND = 5;
@@ -116,6 +116,37 @@
   for (const k in TRAPS) CARDS['t_' + k] = Object.assign({ type: 'trap', key: 't_' + k, id: k }, TRAPS[k]);
 
   const TYPE_NAME = { noun: '名詞', verb: '動詞', part: '助詞', aux: '助動詞', trap: 'トラップ' };
+  // トランプのマーク代わり
+  const SUIT = { noun: '♦', verb: '♠', part: '♣', aux: '♥', trap: '★' };
+
+  // ---------- コスト（マナ） ----------
+  // 毎ターン手札を1枚マナにでき、カードを使うにはコスト分のマナが要る（デュエマ式）
+  const NOUN_COST = { 5: 1, 10: 1, 15: 2, 20: 2, 25: 3, 30: 4 };
+  const TRAP_COST = { hunt: 3, ru: 1, nitpick: 2, silence: 2, mishear: 2 };
+  for (const k in CARDS) {
+    const c = CARDS[k];
+    if (c.type === 'noun') c.cost = NOUN_COST[c.power] || 2;
+    else if (c.type === 'verb') c.cost = c.act === 'buff' || c.act === 'debuff' || c.act === 'break' || !c.consume ? 2 : 1;
+    else if (c.type === 'part') c.cost = c.any ? 1 : 0;
+    else if (c.type === 'aux') c.cost = c.burn ? 2 : 1;
+    else c.cost = TRAP_COST[c.id] || 2;
+  }
+
+  // ---------- デッキ構築のルール ----------
+  const DECK_SIZE = 30;
+  const MAX_COPIES = 3;
+  const LIMITED = { t_hunt: 1 }; // 制限カード
+  const maxCopies = (key) => LIMITED[key] || MAX_COPIES;
+  function checkDeck(list) {
+    const errs = [];
+    if (list.length !== DECK_SIZE) errs.push(`${DECK_SIZE}枚にしてください（いま${list.length}枚）`);
+    const cnt = {};
+    for (const k of list) cnt[k] = (cnt[k] || 0) + 1;
+    for (const k in cnt) if (!CARDS[k]) errs.push('知らないカードがある');
+    for (const k in cnt) if (CARDS[k] && cnt[k] > maxCopies(k)) errs.push(`「${CARDS[k].word}」は${maxCopies(k)}枚まで`);
+    if (!list.some((k) => CARDS[k] && CARDS[k].type === 'noun')) errs.push('名詞が1枚もない');
+    return errs;
+  }
 
   // ---------- デッキ（各30枚） ----------
   // どのデッキにも 攻撃・守り/回復・バフ・デバフ・妨害 がそろうようにしてある
@@ -321,5 +352,10 @@
     evaluate,
     shuffle,
     describe,
+    SUIT,
+    DECK_SIZE,
+    LIMITED,
+    maxCopies,
+    checkDeck,
   };
 })();
