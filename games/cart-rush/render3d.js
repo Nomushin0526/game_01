@@ -27,6 +27,7 @@
   let sun = null;
   let baseFov = 70;
   let player = null;
+  let ghost = null;
   let backdrop = null;
   let skyKey = '';
   let G_night = false;
@@ -67,6 +68,20 @@
     const p = Mo.buildPlayer();
     player = p;
     scene.add(p.root);
+    // ゴースト（タイムアタックの自己ベスト）: 同じモデルを水色の半透明にしたもの
+    const gh = Mo.buildPlayer();
+    gh.root.traverse((m) => {
+      if (!m.isMesh) return;
+      m.material = m.material.clone();
+      m.material.transparent = true;
+      m.material.opacity = 0.45;
+      m.material.depthWrite = false;
+      if (m.material.color) m.material.color.lerp(new T.Color('#9fe8ff'), 0.6);
+    });
+    gh.shadow.visible = false;
+    gh.root.visible = false;
+    ghost = gh;
+    scene.add(gh.root);
   }
 
   function setView(W, H) {
@@ -299,6 +314,45 @@
     return buildExpressway(g, inst, stage, zone, za, zb, RW, sky);
   }
 
+  // ---------- 歩道の物（見た目と当たり判定で共通の配置） ----------
+  // 大通りの歩道（車道の端 roadW から 3.2m）にある物。z の範囲を渡すと、その中の物を返す。
+  //   tree: イチョウ並木（歩道の真ん中） / lamp: 街灯（車道寄り） / signal: 信号の柱（交差点）
+  //   vend: 自動販売機（建物寄り） / mailbox: 郵便ポスト / bench: ベンチ（低いので飛び越えられる）
+  const FIXTURE_DIMS = {
+    tree: { w: 0.3, len: 0.3, h: 4.5, name: '街路樹のイチョウ' },
+    lamp: { w: 0.14, len: 0.14, h: 6.4, name: '街灯' },
+    signal: { w: 0.16, len: 0.16, h: 5.6, name: '信号機の柱' },
+    vend: { w: 0.5, len: 0.35, h: 1.8, name: '自動販売機' },
+    mailbox: { w: 0.26, len: 0.26, h: 1.35, name: '郵便ポスト' },
+    bench: { w: 0.28, len: 0.9, h: 0.8, name: 'ベンチ' },
+  };
+  const VEND_COLORS = ['#e8eef2', '#d8312c', '#2e7bc0', '#f2c94c'];
+  function fixturesIn(stage, za, zb) {
+    const out = [];
+    let z = Math.max(0, za);
+    while (z < zb) {
+      const zone = zoneAt(stage, z);
+      const end = Math.min(zb, zone.to);
+      if (zone.type === 'avenue') {
+        const RW = THEMES.avenue.roadW;
+        const add = (kind, x, zz, extra) => out.push(Object.assign({ kind, x, z: zz }, FIXTURE_DIMS[kind], extra || {}));
+        for (let t = Math.ceil(z / 12) * 12; t < end; t += 12) {
+          for (const s of [-1, 1]) {
+            add('tree', s * (RW + 2.0), t);
+            const r = hash(t, s, 31);
+            if (r < 0.14) add('vend', s * (RW + 2.85), t + 6, { color: VEND_COLORS[Math.floor(hash(t, s, 32) * 4)] });
+            else if (r < 0.22) add('mailbox', s * (RW + 1.0), t + 6);
+            else if (r < 0.3) add('bench', s * (RW + 2.85), t + 6);
+          }
+        }
+        for (let t = Math.ceil((z - 6) / 24) * 24 + 6; t < end; t += 24) if (t >= z) for (const s of [-1, 1]) add('lamp', s * (RW + 0.6), t);
+        for (let t = Math.ceil((z - 78) / 160) * 160 + 78; t < end; t += 160) if (t >= z) for (const s of [-1, 1]) add('signal', s * (RW + 0.8), t);
+      }
+      z = end;
+    }
+    return out;
+  }
+
   // ---------- 東京の景色 ----------
   // 店先（商店街）。4軒ぶん（24m）の絵を1枚にして繰り返す
   const SHOPS = [
@@ -448,38 +502,46 @@
     const zc = -(za + zb) / 2;
     plane(g, -RW, RW, 0, za, zb, texMat(Mo.repeated(Mo.roadTex('avenue'), 'road-avenue', 1, L / 8)));
     for (const s of [-1, 1]) {
-      box(g, 3.2, 0.15, L, s * (RW + 1.6), 0.075, zc, '#cfc8bb');
-      box(g, 0.2, 0.18, L, s * (RW + 0.1), 0.09, zc, '#a9a294');
+      box(g, 3.2, 0.06, L, s * (RW + 1.6), 0.03, zc, '#cfc8bb');
+      box(g, 0.2, 0.1, L, s * (RW + 0.1), 0.05, zc, '#a9a294');
     }
     buildBuildings(g, inst, za, zb, RW, sky, 3.4);
     const night = !!sky.lights;
-    for (let z = Math.ceil(za / 12) * 12; z < zb; z += 12) {
-      for (const s of [-1, 1]) {
-        // イチョウ並木
-        const x = s * (RW + 2.0);
-        inst.add(GEO.cylLow, '#6b4f3a', x, 0.9, -z, 0.14, 1.8, 0.14);
-        inst.add(GEO.cone, night ? '#2f4a2a' : '#a6c94a', x, 3.1, -z, 1.1, 3.0, 1.1);
-      }
-    }
-    for (let z = Math.ceil(za / 24) * 24 + 6; z < zb; z += 24) {
-      for (const s of [-1, 1]) {
-        const x = s * (RW + 0.6);
-        inst.add(GEO.cylLow, '#7d8790', x, 3.2, -z, 0.08, 6.4, 0.08);
-        inst.add(GEO.box, '#7d8790', x - s * 0.8, 6.4, -z, 1.6, 0.08, 0.08);
-        inst.add(GEO.box, night ? '#ffe6a0' : '#fff6c2', x - s * 1.5, 6.3, -z, 0.5, 0.12, 0.3, 0, true);
+    // 歩道の物（当たり判定と同じ配置 fixturesIn を使う）
+    for (const f of fixturesIn(stage, za, zb)) {
+      const x = f.x;
+      const s = Math.sign(x);
+      const z = -f.z;
+      if (f.kind === 'tree') {
+        inst.add(GEO.cylLow, '#6b4f3a', x, 0.9, z, 0.14, 1.8, 0.14);
+        inst.add(GEO.cone, night ? '#2f4a2a' : '#a6c94a', x, 3.1, z, 1.1, 3.0, 1.1);
+      } else if (f.kind === 'lamp') {
+        inst.add(GEO.cylLow, '#7d8790', x, 3.2, z, 0.08, 6.4, 0.08);
+        inst.add(GEO.box, '#7d8790', x - s * 0.8, 6.4, z, 1.6, 0.08, 0.08);
+        inst.add(GEO.box, night ? '#ffe6a0' : '#fff6c2', x - s * 1.5, 6.3, z, 0.5, 0.12, 0.3, 0, true);
+      } else if (f.kind === 'vend') {
+        inst.add(GEO.box, f.color, x, 0.9, z, 1.0, 1.8, 0.7);
+        inst.add(GEO.box, night ? '#fff7d0' : '#e8f4ff', x - s * 0.36, 1.15, z, 0.02, 0.9, 0.55, 0, true);
+        inst.add(GEO.box, '#2b2d42', x - s * 0.36, 0.45, z, 0.02, 0.18, 0.4);
+      } else if (f.kind === 'mailbox') {
+        inst.add(GEO.cyl, '#d8312c', x, 0.65, z, 0.24, 1.3, 0.24);
+        inst.add(GEO.sphereLow, '#d8312c', x, 1.3, z, 0.24, 0.14, 0.24);
+        inst.add(GEO.box, '#2b2d42', x - s * 0.23, 1.0, z, 0.02, 0.05, 0.22);
+      } else if (f.kind === 'bench') {
+        inst.add(GEO.box, '#8a5a3c', x, 0.45, z, 0.5, 0.08, 1.8);
+        inst.add(GEO.box, '#8a5a3c', x + s * 0.22, 0.75, z, 0.06, 0.5, 1.8);
+        for (const d of [-0.7, 0.7]) inst.add(GEO.box, '#555555', x, 0.22, z + d, 0.4, 0.44, 0.06);
+      } else if (f.kind === 'signal') {
+        inst.add(GEO.cylLow, '#7d8790', x, 2.8, z, 0.1, 5.6, 0.1);
+        inst.add(GEO.box, '#7d8790', x - s * 2.2, 5.5, z, 4.4, 0.1, 0.1);
+        inst.add(GEO.box, '#3a3f45', x - s * 3.6, 5.5, z, 1.2, 0.4, 0.3);
+        inst.add(GEO.sphereLow, '#2ee07a', x - s * 4.0, 5.5, z + 0.16, 0.12, 0.12, 0.05, 0, true);
       }
     }
     // 交差点（横断歩道と信号）
     for (let z = Math.ceil(za / 160) * 160 + 80; z < zb; z += 160) {
       const cw = plane(g, -RW, RW, 0.01, z, z + 4, texMat(crosswalkTex(), { transparent: true, depthWrite: false }));
       cw.renderOrder = 1;
-      for (const s of [-1, 1]) {
-        const x = s * (RW + 0.8);
-        inst.add(GEO.cylLow, '#7d8790', x, 2.8, -(z - 2), 0.1, 5.6, 0.1);
-        inst.add(GEO.box, '#7d8790', x - s * 2.2, 5.5, -(z - 2), 4.4, 0.1, 0.1);
-        inst.add(GEO.box, '#3a3f45', x - s * 3.6, 5.5, -(z - 2), 1.2, 0.4, 0.3);
-        inst.add(GEO.sphereLow, '#2ee07a', x - s * 4.0, 5.5, -(z - 2) + 0.16, 0.12, 0.12, 0.05, 0, true);
-      }
     }
   }
   function crosswalkTex() {
@@ -837,6 +899,14 @@
       }
     }
     updatePlayer(G, t);
+    const gp = G.ghostPos;
+    ghost.root.visible = !!gp && G.mode !== 'normal' && G.state !== 'menu';
+    if (gp) {
+      ghost.root.position.set(gp.x, gp.y, -gp.z);
+      const sw = gp.done ? 0 : Math.sin(t * 14) * 0.8;
+      ghost.legs[0].rotation.x = sw;
+      ghost.legs[1].rotation.x = -sw;
+    }
 
     // カメラ（加速中は画角を広げてスピード感を出す）
     // 画角: 加速中は広く、飛び出しやタイムセールの瞬間は一瞬グッと広げる（パンチ）
@@ -921,6 +991,8 @@
     playerScreen,
     zoneAt,
     view: R,
+    fixturesIn,
+    sidewalkOf: (zone) => (zone.type === 'avenue' ? 3.2 : 0),
     // 開発用: 描画負荷の確認
     stats: () => Object.assign({}, renderer.info.render, { geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures }),
   };

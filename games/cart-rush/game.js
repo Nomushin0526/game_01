@@ -77,6 +77,10 @@
     clean() {
       [1047, 1319, 1568, 2093].forEach((f, i) => audio.tone(f, 0.09, { type: 'square', vol: 0.08, delay: i * 0.045 }));
     },
+    curb() {
+      audio.noise(0.08, { vol: 0.22, cutoff: 500 });
+      audio.tone(120, 0.08, { type: 'square', vol: 0.08 });
+    },
     smash() {
       audio.noise(0.15, { vol: 0.22, cutoff: 2600 });
       audio.tone(700, 0.1, { type: 'square', to: 300, vol: 0.08 });
@@ -653,12 +657,37 @@
     G.night = false;
     G.particles = [];
     G.floaters = [];
+    G.ghost = null;
+    G.ghostPos = null;
     G.cpIndex = 0;
     G.invuln = 0;
     G.showPlayer = true;
     resetPlayer();
     setHud(false);
     showScreen('title');
+  }
+
+  // ---------- ゴースト（タイムアタックの自己ベスト） ----------
+  const ghostKey = (st, night) => `cartRush.ghost.${st.id}${night ? '@night' : ''}`;
+  // 記録は [時刻×100, x×100, y×100, z×10] の繰り返し。時刻で線形補間する
+  function ghostAt(t) {
+    const g = G.ghost;
+    if (!g || !g.d || g.d.length < 8) return null;
+    const d = g.d;
+    const n = d.length / 4;
+    const tt = t * 100;
+    let lo = 0;
+    let hi = n - 1;
+    if (tt >= d[hi * 4]) return { x: d[hi * 4 + 1] / 100, y: d[hi * 4 + 2] / 100, z: d[hi * 4 + 3] / 10, done: true };
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (d[mid * 4] <= tt) lo = mid;
+      else hi = mid;
+    }
+    const a = lo * 4;
+    const b = hi * 4;
+    const k = clamp((tt - d[a]) / Math.max(1, d[b] - d[a]), 0, 1);
+    return { x: (d[a + 1] + (d[b + 1] - d[a + 1]) * k) / 100, y: (d[a + 2] + (d[b + 2] - d[a + 2]) * k) / 100, z: (d[a + 3] + (d[b + 3] - d[a + 3]) * k) / 10 };
   }
 
   function startStage(idx, mode) {
@@ -690,6 +719,10 @@
       cleanLandings: 0,
       maxCombo: 0,
       lastCause: null,
+      rec: [],
+      recT: 0,
+      ghost: mode === 'normal' ? null : storage.get(ghostKey(st, !!settings.night), null),
+      ghostPos: null,
       sale: 0,
       sales: 0,
       smashed: 0,
@@ -757,7 +790,7 @@
   };
   function onHit(o) {
     const P = G.player;
-    G.lastCause = CAUSE[o.kind] || '障害物';
+    G.lastCause = o.name || CAUSE[o.kind] || '障害物';
     o.hit = true;
     o.kx = (o.x >= P.x ? 1 : -1) * (o.vz ? 0 : 2.5);
     G.hits++;
@@ -1128,7 +1161,9 @@
       // 指でなぞった分だけ目標位置を動かす（画面上の指の動き ≒ カートの動き）
       P.tx += (dragPx * CONTROL.dragSensitivity) / Render.view.k;
       P.tx += input.axisX() * th.steer * dt; // PC確認用のキーボード
-      P.tx = clamp(P.tx, -th.limit, th.limit);
+      // 大通りは歩道まで出られる（車は来ないが、並木や自販機をよけながら走る抜け道）
+      const lim = Render.sidewalkOf(zone) > 0 ? th.roadW + Render.sidewalkOf(zone) - 0.35 : th.limit;
+      P.tx = clamp(P.tx, -lim, lim);
       const prevX = P.x;
       const maxStep = CONTROL.maxSideSpeed * dt;
       P.x += clamp((P.tx - P.x) * Math.min(1, dt * 28), -maxStep, maxStep);
@@ -1275,12 +1310,47 @@
           if (o.minClr >= 0 && o.minClr < 0.45 && G.invuln <= 0) nearMiss();
         }
       }
+      // 歩道の物（街路樹・街灯・自販機など）。ゲージはたまらない。タイムセール中は突っ切れる
+      if (Render.sidewalkOf(zone) > 0 && Math.abs(P.x) > th.roadW - 0.5) {
+        for (const f of Render.fixturesIn(G.stage, pz - 2, cz + 2)) {
+          const reach = f.len / 2 + 0.75;
+          if (f.z + reach < pz || f.z - reach > cz) continue;
+          if (Math.abs(f.x - P.x) >= f.w + 0.38 || P.y >= f.h - 0.12) continue;
+          if (G.sale > 0) {
+            G.shake = Math.max(G.shake, 0.15);
+            continue;
+          }
+          if (G.invuln > 0) continue;
+          onHit({ kind: f.kind, name: f.name, x: f.x, z: f.z });
+          break;
+        }
+      }
+      // 車道と歩道の段差をまたぐと、ガタンと揺れる
+      const onWalk = Render.sidewalkOf(zone) > 0 && Math.abs(P.x) > th.roadW + 0.1;
+      if (onWalk !== !!P.walk && P.y <= 0.001 && !P.onRamp && !P.onObj) {
+        P.vy = 2.2;
+        P.y = 0.001;
+        P.speed *= 0.97;
+        G.shake = Math.max(G.shake, 0.15);
+        sfx.curb();
+        haptics.vibrate(12);
+      }
+      P.walk = onWalk;
     }
     G.comboTimer = Math.max(0, G.comboTimer - dt);
     if (G.comboTimer <= 0) G.combo = 0;
 
     if (G.state === 'run') {
       G.elapsed += dt;
+      // タイムアタック: 走りを記録（0.05秒ごと）＋ 自己ベストのゴーストを再生
+      if (G.mode !== 'normal') {
+        G.recT += dt;
+        if (G.recT >= 0.05) {
+          G.recT -= 0.05;
+          G.rec.push(Math.round(G.elapsed * 100), Math.round(P.x * 100), Math.round(P.y * 100), Math.round(P.z * 10));
+        }
+        G.ghostPos = ghostAt(G.elapsed);
+      }
       if (G.mode === 'normal') {
         G.timeLeft -= dt;
         if (G.timeLeft <= 10) {
@@ -1431,6 +1501,9 @@
       if (!rec.bestTime || total < rec.bestTime) {
         rec.bestTime = total;
         newRecord = true;
+        // 自己ベストの走りをゴーストとして保存
+        G.rec.push(Math.round(G.elapsed * 100), Math.round(G.player.x * 100), Math.round(G.player.y * 100), Math.round(G.player.z * 10));
+        storage.set(ghostKey(st, G.night), { t: total, d: G.rec });
       }
       rows.push(['ベストタイム', formatTime(rec.bestTime)]);
       rec.cleared = true;
@@ -1581,7 +1654,7 @@
             ? `ベスト ${rec.bestScore.toLocaleString()}点`
             : '記録なし'
           : rec.bestTime
-          ? `ベスト ${formatTime(rec.bestTime)}`
+          ? `ベスト ${formatTime(rec.bestTime)}${storage.get(ghostKey(st, settings.night), null) ? '　👻ゴーストと勝負' : ''}`
           : '記録なし';
       const btn = document.createElement('button');
       btn.className = 'stage-card stage-' + st.id;
