@@ -755,6 +755,9 @@
     const P = G.player;
     const p = player;
     p.root.position.set(P.x, P.y, -P.z);
+    // 着地でつぶれる（スクワッシュ）
+    const sq = P.squash || 0;
+    p.rig.scale.set(1 + sq * 0.18, 1 - sq * 0.28, 1 + sq * 0.1);
     p.root.rotation.z = -P.steer * 0.12;
     p.root.rotation.y = -P.steer * 0.12;
     const grounded = P.y <= 0.001 || P.onRamp || P.onObj;
@@ -836,8 +839,9 @@
     updatePlayer(G, t);
 
     // カメラ（加速中は画角を広げてスピード感を出す）
+    // 画角: 加速中は広く、飛び出しやタイムセールの瞬間は一瞬グッと広げる（パンチ）
     const boost = G.boost > 0 ? 6 + (G.boostLevel || 1) * 4 : 0;
-    const fov = baseFov + boost;
+    const fov = baseFov + boost + (G.punch || 0) * 7;
     if (Math.abs(camera.fov - fov) > 0.05) {
       camera.fov += (fov - camera.fov) * 0.15;
       camera.updateProjectionMatrix();
@@ -850,7 +854,8 @@
       camera.position.set(P.x + sx * 0.5, P.y + eye + sy * 0.5, -(P.z + 0.25));
       camera.lookAt(P.x + P.steer * 0.8, P.y + eye - 0.35, -(P.z + 30));
     } else {
-      camera.position.set(R.camX + sx, CAM.h + R.lift + sy, -(P.z - CAM.back));
+      // 着地でカメラが沈む
+      camera.position.set(R.camX + sx, CAM.h + R.lift + sy - (G.dip || 0) * 0.5, -(P.z - CAM.back));
       camera.lookAt(R.camX * 0.9, CAM.lookY + R.lift * 0.85, -(P.z + CAM.ahead));
     }
     if (backdrop) backdrop.position.set(camera.position.x * 0.6, 0, camera.position.z);

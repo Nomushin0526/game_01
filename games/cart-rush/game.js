@@ -74,6 +74,9 @@
     slide() {
       audio.noise(0.25, { vol: 0.12, cutoff: 900 });
     },
+    clean() {
+      [1047, 1319, 1568, 2093].forEach((f, i) => audio.tone(f, 0.09, { type: 'square', vol: 0.08, delay: i * 0.045 }));
+    },
     smash() {
       audio.noise(0.15, { vol: 0.22, cutoff: 2600 });
       audio.tone(700, 0.1, { type: 'square', to: 300, vol: 0.08 });
@@ -682,6 +685,11 @@
       nearMisses: 0,
       gauge: 0,
       gaugeFull: false,
+      punch: 0,
+      dip: 0,
+      cleanLandings: 0,
+      maxCombo: 0,
+      lastCause: null,
       sale: 0,
       sales: 0,
       smashed: 0,
@@ -743,8 +751,13 @@
     el.classList.add('show');
   }
 
+  const CAUSE = {
+    shopper: '買い物客', cart: '放置カート', display: '特売ワゴン', boxes: 'みかんの段ボール', car: '乗用車', truck: 'トラック',
+    bus: '路線バス', bike: '自転車', barrier: '通行止め', bar: '工事のバー', noren: 'のれん', banner: '特売の幕', cat: '飛び出したネコ',
+  };
   function onHit(o) {
     const P = G.player;
+    G.lastCause = CAUSE[o.kind] || '障害物';
     o.hit = true;
     o.kx = (o.x >= P.x ? 1 : -1) * (o.vz ? 0 : 2.5);
     G.hits++;
@@ -796,6 +809,8 @@
     const type = G.chain === 1 ? TRICKS[Math.floor(Math.random() * TRICKS.length)] : G.chain === 2 ? 'cork' : 'flip';
     P.trick = { type, t: 0, dur: airTime(P.vy) * 0.92, turns: G.chain >= 3 ? 2 : 1, dir: Math.random() < 0.5 ? -1 : 1 };
     sfx.jump(G.chain);
+    G.punch = Math.max(G.punch || 0, 1.2 + G.chain * 0.3);
+    clearLanding(airTime(P.vy) + (r.h - JUMP.ramp.h) / 10);
     addGauge(r.attach ? SALE.gain.truckRamp : SALE.gain.ramp);
     haptics.vibrate(chained ? [20, 30, 40] : 35);
   }
@@ -840,19 +855,70 @@
     }
   }
 
-  function landed() {
+  // 着地。imp = 落ちてきた速さ（強く着地するほどカメラが沈み、体がつぶれる）
+  function landed(imp) {
     const P = G.player;
     const chain = G.chain || 0;
     G.chain = 0;
-    G.shake = Math.max(G.shake, 0.15);
+    imp = imp || 0;
+    if (imp > 2.5) {
+      G.dip = Math.min(1.6, (G.dip || 0) + imp * 0.07);
+      P.squash = Math.min(1, imp / 14);
+      G.shake = Math.max(G.shake, Math.min(0.35, imp * 0.02));
+    }
     sfx.land();
     haptics.vibrate(25);
     if (P.trick) {
-      // 技を決めて着地
-      G.score += 100 * Math.max(1, chain);
-      addGauge(SALE.gain.trick * Math.max(1, chain) * (P.trick.turns || 1));
-      burst(['#ffffff', '#ffd166', '#2ec4b6'], 12);
+      // 8割以上回っていれば「着地成功」: スピードとコンボで点数が伸びる
+      const done = P.trick.t >= P.trick.dur * 0.8;
+      if (done) {
+        bumpCombo();
+        const pts = Math.round(600 * ((P.speed * 3.6) / 100) * (1 + 0.25 * (Math.min(G.combo, 13) - 1)) * Math.max(1, chain) * (P.trick.turns || 1));
+        G.score += pts;
+        G.cleanLandings = (G.cleanLandings || 0) + 1;
+        addGauge(SALE.gain.trick * Math.max(1, chain) * (P.trick.turns || 1));
+        burst(['#ffffff', '#ffd166', '#2ec4b6'], 16);
+        sfx.clean();
+        G.punch = Math.max(G.punch || 0, 0.8);
+      } else {
+        // 回りきれずに着地: よろけて減速
+        P.speed *= 0.6;
+        P.stumble = 0.6;
+        G.shake = Math.max(G.shake, 0.3);
+        G.combo = 0;
+      }
       P.trick = null;
+    }
+  }
+  // 技・ギリギリ回避・はね飛ばしをつなぐコンボ（3.2秒以内に次をつなぐ）
+  function bumpCombo() {
+    G.combo = G.comboTimer > 0 ? G.combo + 1 : 1;
+    G.comboTimer = 3.2;
+    G.maxCombo = Math.max(G.maxCombo || 0, G.combo);
+  }
+
+  // 飛んだ先（着地点）をふさいでいる車や障害物を、隣の車線へどかす（理不尽なミスにしない）
+  function clearLanding(air) {
+    const P = G.player;
+    const zL = P.z + 0.6 + P.speed * air;
+    const za = zL - Math.max(24, P.speed * 0.45);
+    const zb = zL + Math.max(10, P.speed * 0.5); // 着地してから0.5秒ぶんは空けておく（よける間がないため）
+    const th = THEMES[zoneAt(G.stage, zL).type];
+    const lanes = th.lanes || zoneLanes(zoneAt(G.stage, zL), th);
+    for (const o of G.obstacles) {
+      if (o.flying || o.hit || LIGHT.has(o.kind)) continue;
+      const z = o.z + (o.vz || 0) * air;
+      if (Math.abs(o.x - P.x) > o.w + 1.1 || z + o.len / 2 < za || z - o.len / 2 > zb) continue;
+      if (G.ramps.some((r) => r.attach === o)) continue;
+      const to = lanes.slice().sort((a, b) => Math.abs(b - P.x) - Math.abs(a - P.x)).find((lx) => Math.abs(lx - P.x) > o.w + 1.2 && !laneBlocked(lx, z - 20, z + 20, o));
+      if (to === undefined) continue;
+      if (VEHICLES.has(o.kind)) {
+        o.change = { to, dist: Infinity, blinker: false, signal: 0, moveTime: Math.min(0.8, air * 0.6) };
+        o.lcState = 'move';
+        o.lcTimer = 0;
+        o.lcFrom = o.x;
+        o.avoiding = true;
+      } else o.x = to;
     }
   }
 
@@ -874,6 +940,7 @@
     G.gaugeFull = false;
     G.player.speed = Math.max(G.player.speed, THEMES[zoneAt(G.stage, G.player.z).type].maxSpeed * 1.2);
     sfx.sale();
+    G.punch = 2.2;
     haptics.vibrate([30, 30, 60]);
     burst(['#ffd166', '#ff8c1a', '#ffffff', '#ef476f'], 30);
   }
@@ -900,7 +967,8 @@
     o.sry = (Math.random() - 0.5) * 10;
     o.srz = side * (4 + Math.random() * 8);
     G.smashed++;
-    G.score += heavy ? 150 : 40;
+    bumpCombo();
+    G.score += Math.round((heavy ? 150 : 40) * (1 + 0.1 * Math.min(G.combo, 10)));
     sfx.smash();
     haptics.vibrate(heavy ? 40 : 12);
     G.shake = Math.max(G.shake, heavy ? 0.25 : 0.1);
@@ -935,8 +1003,7 @@
   }
 
   function nearMiss() {
-    G.combo = G.comboTimer > 0 ? G.combo + 1 : 1;
-    G.comboTimer = 2.5;
+    bumpCombo();
     G.nearMisses++;
     const pts = 50 * G.combo;
     G.score += pts;
@@ -1021,6 +1088,9 @@
       }
       if (G.countdown <= 0) {
         G.state = 'run';
+        // スタートダッシュ: GO の瞬間に一気に加速
+        G.player.speed = THEMES[zoneAt(G.stage, 0).type].maxSpeed * 0.6;
+        G.punch = 1.6;
         audio.playMusic(SONGS[G.stage.id] || SONGS.market);
         $('drag-hint').classList.add('hidden');
         banner('GO!', 'go');
@@ -1066,7 +1136,8 @@
 
       const mul = Math.max(G.boost > 0 ? JUMP.levels[G.boostLevel - 1] : 1, G.sale > 0 ? SALE.speedMul : 1);
       const top = th.maxSpeed * mul;
-      if (P.speed < top) P.speed = Math.min(top, P.speed + (mul > 1 ? th.accel * 3 : th.accel) * dt);
+      const acc = (mul > 1 ? th.accel * 3 : th.accel) * (P.stumble > 0 ? 0.45 : 1);
+      if (P.speed < top) P.speed = Math.min(top, P.speed + acc * dt);
       else P.speed = Math.max(top, P.speed - 14 * dt);
     } else if (G.state === 'goal' || G.state === 'over') {
       P.speed = Math.max(0, P.speed - 10 * dt);
@@ -1086,9 +1157,10 @@
       P.y += P.vy * dt;
       if (P.trick) P.trick.t += dt;
       if (P.y <= 0) {
+        const imp = -P.vy;
         P.y = 0;
         P.vy = 0;
-        landed();
+        landed(imp);
         if (P.slideBuf > 0) doSlide();
       }
     }
@@ -1104,7 +1176,8 @@
       for (const o of G.obstacles) {
         if (!VEHICLES.has(o.kind) || o.flying) continue;
         if (prevY >= o.h - 0.4 && P.y <= o.h + 0.6 && onRoof(o)) {
-          landed();
+          landed(-P.vy * 0.5);
+          bumpCombo();
           P.y = o.h + 0.01;
           P.vy = MOVE.hopVy * 0.75;
           G.roofHops = (G.roofHops || 0) + 1;
@@ -1233,6 +1306,10 @@
     }
 
     G.invuln = Math.max(0, G.invuln - dt);
+    G.punch = Math.max(0, (G.punch || 0) - dt * 2.5);
+    G.dip = Math.max(0, (G.dip || 0) - dt * 4);
+    P.squash = Math.max(0, (P.squash || 0) - dt * 5);
+    P.stumble = Math.max(0, (P.stumble || 0) - dt);
     G.shake = Math.max(0, G.shake - dt);
     G.camX = (G.camX || 0) + (P.x * 0.85 - (G.camX || 0)) * Math.min(1, dt * 8);
     // ジャンプ中はカメラも少し持ち上げて追いかける
@@ -1340,7 +1417,7 @@
           ['スコア', Math.floor(G.score).toLocaleString(), 'total'],
         ];
         headline = G.overReason === 'time' ? 'TIME UP' : 'GAME OVER';
-        sub = G.overReason === 'time' ? '時間切れ！特売が終わっちゃった…' : 'ぶつかりすぎて買い物どころじゃない…';
+        sub = G.overReason === 'time' ? '時間切れ！特売が終わっちゃった…' : `${G.lastCause || '障害物'}に激突。買い物どころじゃない…`;
       }
       if (rec.bestScore) rows.push(['ベストスコア', rec.bestScore.toLocaleString()]);
     } else {
@@ -1363,6 +1440,7 @@
     rows = [
       ['ギリギリ回避', `${G.nearMisses}回`],
       ['ジャンプ台', `${G.jumps}回（最大${G.maxChain}連続）`],
+      ['着地成功 / 最大コンボ', `${G.cleanLandings || 0}回 / ${G.maxCombo || 0}`],
       ['はね飛ばした数', `${G.smashed}個`],
       ['タイムセール', `${G.sales}回`],
     ].concat(rows);
