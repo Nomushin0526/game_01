@@ -161,6 +161,14 @@
     if (m.drop) {
       board[m.ty][m.tx] = newPawn(owner);
       hands[owner]--;
+    } else if (m.royal) {
+      // 王の逆襲: 隣の敵の歩を、守られていても鎧を着ていても なぎ払う（王はその場に残る）
+      const target = board[m.ty][m.tx];
+      board[m.ty][m.tx] = null;
+      ev.captured = target;
+      ev.royal = true;
+      hands[owner]++;
+      if (target.fused.length) ev.loot = pickLoot ? pickLoot(target.fused) : target.fused[0];
     } else {
       const mover = clonePiece(board[m.fy][m.fx]);
       const target = board[m.ty][m.tx];
@@ -190,6 +198,60 @@
     return { st: next, ev };
   }
 
+  // 王の逆襲で なぎ払える相手の歩（使ったあと自分の王が狙われない物だけ）
+  function royalTargets(st, owner) {
+    const k = findKing(st, owner);
+    if (!k) return [];
+    const base = Object.assign({}, st, { turn: owner });
+    const out = [];
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const tx = k[0] + dx;
+        const ty = k[1] + dy;
+        if ((!dx && !dy) || !inside(tx, ty)) continue;
+        const p = st.board[ty][tx];
+        if (!p || p.owner === owner || p.t !== 'P') continue;
+        const m = { royal: true, fx: k[0], fy: k[1], tx, ty };
+        if (!inCheck(applyMove(base, m).st, owner)) out.push(m);
+      }
+    return out;
+  }
+
+  // ---------- 二つ名とレア度（ネタ） ----------
+  const SOLO = { R: '暴れ飛車', B: '斜め上をいく', L: '一直線バカ', N: 'ぴょんぴょん', G: '黄金の', S: 'いぶし銀の' };
+  const DUO = {
+    BR: '龍も馬も超えし', NR: '天翔ける竜', LR: '直進しかしない竜', GR: '金ピカ竜', RS: '銀色の竜',
+    BN: '斜めに跳ねる', BG: '成金', BS: '斜め好きの紳士', BL: '迷わず斜め', LN: '猪突猛進',
+    GS: '金銀財宝', GL: 'お金で一直線', GN: '跳ねる成金', LS: '突撃隊長', NS: '忍者',
+  };
+  const RARITY = [
+    [0, 'N', '#9aa3ab'],
+    [4, 'R', '#5fa4e6'],
+    [8, 'SR', '#b07ad6'],
+    [14, 'SSR', '#f3b740'],
+    [22, 'UR', 'rainbow'],
+  ];
+  function epithet(p) {
+    if (p.t === 'K') return { title: '王', rarity: 'N', color: '#9aa3ab' };
+    const f = p.fused.slice().sort();
+    let title;
+    if (f.length === 0) title = p.ups.armor ? '鉄壁の' : p.ups.leg || p.ups.side || p.ups.back ? '鍛えた' : 'ただの';
+    else if (f.length === 1) title = SOLO[f[0]];
+    else if (f.length === 2) title = DUO[f.join('')] || `${SOLO[f[0]]}×${SOLO[f[1]]}`;
+    else if (f.includes('R') && f.includes('B')) title = '天上天下唯我独歩';
+    else if (f.includes('G') && f.includes('S')) title = '金銀ジャラジャラ';
+    else title = '歩の完成形';
+    const pw = power(p) + p.ups.armor * 2;
+    let r = RARITY[0];
+    for (const x of RARITY) if (pw >= x[0]) r = x;
+    return { title, rarity: r[1], color: r[2] };
+  }
+  // 二つ名つきの呼び名（例: 天翔ける竜 桂飛歩）
+  function fullName(p) {
+    const t = epithet(p).title;
+    return /[のし]$/.test(t) ? t + pawnName(p) : `${t} ${pawnName(p)}`;
+  }
+
   function legalMoves(st, owner) {
     const o = owner === undefined ? st.turn : owner;
     const base = Object.assign({}, st, { turn: o });
@@ -213,6 +275,9 @@
     genMoves,
     legalMoves,
     applyMove,
+    royalTargets,
+    epithet,
+    fullName,
     inCheck,
     findKing,
     sign,

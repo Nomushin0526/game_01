@@ -20,6 +20,12 @@
     coin: () => [988, 1319].forEach((f, i) => audio.tone(f, 0.08, { type: 'square', vol: 0.07, delay: i * 0.05 })),
     fuse: () => [523, 784, 1047, 1568].forEach((f, i) => audio.tone(f, 0.12, { type: 'triangle', vol: 0.12, delay: i * 0.06 })),
     check: () => audio.tone(1200, 0.2, { type: 'sawtooth', vol: 0.08, to: 600 }),
+    royal: () => {
+      audio.noise(0.35, { vol: 0.45, cutoff: 600 });
+      [196, 147, 98].forEach((f, i) => audio.tone(f, 0.25, { type: 'sawtooth', vol: 0.12, delay: i * 0.08 }));
+    },
+    crash: () => [880, 440, 220, 110].forEach((f, i) => audio.tone(f, 0.2, { type: 'sawtooth', vol: 0.08, delay: i * 0.09 })),
+    rare: () => [523, 659, 784, 1047, 1319, 1568, 2093].forEach((f, i) => audio.tone(f, 0.14, { type: 'triangle', vol: 0.13, delay: i * 0.07 })),
     win: () => [523, 659, 784, 1047].forEach((f, i) => audio.tone(f, 0.18, { type: 'triangle', vol: 0.18, delay: i * 0.12 })),
     lose: () => [392, 330, 262].forEach((f, i) => audio.tone(f, 0.22, { type: 'triangle', vol: 0.16, delay: i * 0.18 })),
   };
@@ -29,8 +35,9 @@
 
   // ---------- 進行 ----------
   function newGame() {
-    G = { st: Fu.initialState(), players: [Eco.newPlayer(), Eco.newPlayer()], market: Eco.newMarket(), sel: null, drop: false, last: null, log: [], over: false, busy: false };
-    for (const pl of G.players) Eco.rollLineup(pl, rng);
+    G = { st: Fu.initialState(), players: [Eco.newPlayer(), Eco.newPlayer()], market: Eco.newMarket(), sel: null, drop: false, royal: false, last: null, log: [], over: false, busy: false };
+    G.onFuse = (owner, p) => fuseCutin(owner, p);
+    for (const pl of G.players) Eco.rollLineup(pl, rng, 1);
     log('対局開始！あなたの手番です（先手）');
     render();
   }
@@ -40,8 +47,32 @@
   }
   function startTurn(owner) {
     const pl = G.players[owner];
+    const who = owner === 0 ? 'あなた' : '相手';
     pl.money += Eco.INCOME;
     pl.trades = Eco.TRADES_PER_TURN;
+    const add = Eco.addInterest(pl);
+    if (add) log(`💸 ${who}の借金に利息 ${yen(add)}（借金 ${yen(pl.debt)}）`);
+    const sz = Eco.seize(pl, G.market);
+    if (sz) {
+      if (sz.kind === 'none') log(`🚪 ${who}の家に取り立て屋が来た…が、何もなかった`);
+      else if (sz.kind === 'bankrupt') {
+        log(`💥 ${who}、自己破産！借金は消えたが、お金も持ち物もすべて失った`);
+        banner(`💥 ${who}、自己破産！すべてを失った…`, true);
+        shake();
+        sfx.crash();
+      } else {
+        log(`🚪 差し押さえ！${who}の${sz.name}を持っていかれた（借金 -${yen(sz.v)}）`);
+        if (owner === 0) {
+          banner(`差し押さえ！${sz.name}を持っていかれた`, true);
+          sfx.crash();
+        }
+      }
+    }
+  }
+  // 手番の側に指せる手が1つでもあるか（王の逆襲も含む）
+  function canPlay(side) {
+    if (Fu.legalMoves(G.st, side).length) return true;
+    return G.players[side].royal > 0 && Fu.royalTargets(G.st, side).length > 0;
   }
   const myTurn = () => G && !G.over && !G.busy && G.st.turn === 0;
 
@@ -52,6 +83,14 @@
     const ev = res.ev;
     const pl = G.players[mover];
     if (ev.bounced) log(`${who}の攻撃を鉄の鎧がはじいた！`);
+    if (ev.royal) {
+      pl.royal--;
+      log(`👑 ${who}の王の逆襲！「${Fu.fullName(ev.captured)}」をなぎ払った！`);
+      cutin({ kicker: mover === 0 ? 'あなたの王' : '相手の玉', title: '王の逆襲', name: `${Fu.pawnName(ev.captured)}をなぎ払った！`, color: '#d62f2f', owner: mover, kind: 'royal' });
+      shake();
+      sfx.royal();
+      haptics.vibrate([40, 30, 80]);
+    }
     if (ev.captured && ev.captured.t === 'P') {
       pl.money += Eco.CAPTURE_REWARD;
       let msg = `${who}が「${Fu.pawnName(ev.captured)}」を取った（+${yen(Eco.CAPTURE_REWARD)}・持ち歩+1）`;
@@ -66,18 +105,37 @@
     G.last = m;
     G.sel = null;
     G.drop = false;
-    if (ev.captured || ev.bounced) {
+    G.royal = false;
+    if (ev.royal) {
+    } else if (ev.captured || ev.bounced) {
       sfx.capture();
       haptics.vibrate(30);
     } else sfx.move();
     // 相場は手番ごとに動く
     Eco.tick(G.market, rng);
-    if (G.market.news) log(`📰 ${G.market.news.text}（${Eco.COMMODITIES[G.market.news.k].name}${G.market.news.dir > 0 ? '急騰' : '急落'}）`);
-    // 詰み判定
+    const nw = G.market.news;
+    if (nw) {
+      let tail = '';
+      if (nw.k) tail = `（${nw.k.split('').map((k) => Eco.COMMODITIES[k].name).join('・')} ${nw.dir > 0 ? '急騰' : '大暴落'} ${nw.dir > 0 ? '+' : '-'}${Math.round(nw.amt * 100)}%）`;
+      if (nw.cash) for (const p of G.players) p.money = Math.max(0, p.money + nw.cash);
+      log(`📰 ${nw.text}${tail}`);
+      banner(`📰 ${nw.text}${tail}`, nw.big);
+      if (nw.big) {
+        shake();
+        sfx.crash();
+      }
+    }
+    if (G.market.taxDue) {
+      const t0 = Eco.tax(G.players[0]);
+      const t1 = Eco.tax(G.players[1]);
+      log(`🧾 確定申告の季節。所持金の${Math.round(Eco.TAX_RATE * 100)}%を納税（あなた ${yen(t0)}・相手 ${yen(t1)}）`);
+    }
+    // 詰み判定（王の逆襲が残っていれば、それで逃れられることもある）
     const side = G.st.turn;
-    if (!Fu.legalMoves(G.st, side).length) return finish(mover);
+    if (!canPlay(side)) return finish(mover);
     if (Fu.inCheck(G.st, side)) {
-      log(side === 0 ? '⚠ 王手をかけられた！' : '王手！');
+      const rescue = !Fu.legalMoves(G.st, side).length;
+      log(side === 0 ? (rescue ? '⚠ 絶体絶命！王の逆襲しかない！' : '⚠ 王手をかけられた！') : '王手！');
       sfx.check();
     }
     if (side === 1) {
@@ -91,15 +149,17 @@
   }
 
   function aiTurn() {
+    if (G.over) return;
     startTurn(1);
     for (const msg of AI.economy(G, rng)) log('相手：' + msg);
     render();
     setTimeout(() => {
-      const m = AI.chooseMove(G.st);
+      if (G.over) return;
+      const m = AI.chooseMove(G.st, G.players[1].royal);
       G.busy = false;
       if (!m) return finish(0);
       doMove(m);
-    }, 450);
+    }, cutinBusy() ? 1500 : 450);
   }
 
   function finish(winner) {
@@ -118,6 +178,12 @@
   function onSquare(x, y) {
     if (!myTurn()) return;
     const p = G.st.board[y][x];
+    if (G.royal) {
+      const m = Fu.royalTargets(G.st, 0).find((mm) => mm.tx === x && mm.ty === y);
+      if (m && G.players[0].royal > 0) return doMove(m);
+      G.royal = false;
+      return render();
+    }
     if (G.drop) {
       const m = Fu.legalMoves(G.st, 0).find((mm) => mm.drop && mm.tx === x && mm.ty === y);
       if (m) return doMove(m);
@@ -166,8 +232,9 @@
     if (p.ups.back) badges.push('<i>後</i>');
     if (p.ups.armor) badges.push(`<i class="ar">鎧${p.ups.armor}</i>`);
     const main = p.promo ? 'と' : '歩';
+    const rar = Fu.epithet(p).rarity;
     return (
-      `<div class="pc${p.owner ? ' op' : ''}${p.promo ? ' promo' : ''}${sup ? ' super' : ''}">` +
+      `<div class="pc${p.owner ? ' op' : ''}${p.promo ? ' promo' : ''}${sup ? ' super' : ''} r-${rar}">` +
       (head ? `<span class="nm">${head}</span><span class="main">${main}</span>` : `<span>${main}</span>`) +
       `</div>` +
       (badges.length ? `<div class="badges${p.owner ? ' op' : ''}">${badges.join('')}</div>` : '')
@@ -181,7 +248,8 @@
     return (
       `<span class="money">${yen(pl.money)}</span>` +
       `<span class="chip-mini">🥇金${pl.parts.G}</span><span class="chip-mini">🥈銀${pl.parts.S}</span>` +
-      (owner === 1 ? `<span class="chip-mini">持ち歩${G.st.hands[1]}</span>` : '') +
+      (pl.debt ? `<span class="chip-mini debt">借金${yen(pl.debt)}</span>` : '') +
+      (owner === 1 ? `<span class="chip-mini">持ち歩${G.st.hands[1]}</span><span class="chip-mini">👑${pl.royal}</span>` : '') +
       (parts ? `<span class="chip-mini">${parts}</span>` : '')
     );
   }
@@ -193,6 +261,8 @@
     const can = new Map();
     if (G.sel) for (const m of G.selMoves) can.set(m.ty * N + m.tx, !!m.cap);
     if (G.drop) for (const m of Fu.legalMoves(st, 0)) if (m.drop) can.set(m.ty * N + m.tx, false);
+    const roy = new Set();
+    if (G.royal) for (const m of Fu.royalTargets(st, 0)) roy.add(m.ty * N + m.tx);
     for (let y = 0; y < N; y++)
       for (let x = 0; x < N; x++) {
         const d = sqs[y * N + x];
@@ -204,12 +274,19 @@
         d.classList.toggle('check', !!(checkK && checkK[0] === x && checkK[1] === y));
         d.classList.toggle('can', can.has(i));
         d.classList.toggle('capture', can.get(i) === true);
+        d.classList.toggle('royal-t', roy.has(i));
       }
     $('op-stats').innerHTML = statsHTML(1);
     $('me-stats').innerHTML = statsHTML(0);
     $('hand-n').textContent = st.hands[0];
     $('btn-hand').disabled = !myTurn() || st.hands[0] === 0;
     $('btn-hand').classList.toggle('on', G.drop);
+    const me = G.players[0];
+    const rt = myTurn() && me.royal > 0 ? Fu.royalTargets(st, 0).length : 0;
+    $('royal-n').textContent = me.royal;
+    $('btn-royal').disabled = !rt;
+    $('btn-royal').classList.toggle('on', G.royal);
+    $('btn-royal').classList.toggle('ready', !!rt && !G.royal);
     $('log').innerHTML = G.log.slice(0, 2).map((l) => `<div>${l}</div>`).join('') || '<div>&nbsp;</div>';
     renderTab();
   }
@@ -235,10 +312,15 @@
           <button class="mini-btn primary" data-buy="${i}" ${!can || pl.money < it.price ? 'disabled' : ''}>${yen(it.price)}</button></div>`;
       })
       .join('');
+    const infl = G.market.infl;
+    const bank = `<div class="bank"><div class="bank-head"><b>🏦 まねき金融（自称・良心的）</b><span>物価 ×${infl.toFixed(2)}</span></div>
+      <div class="row-between"><span>借金 <b class="${pl.debt ? 'debt-t' : ''}">${yen(pl.debt)}</b><small>　利息 毎手番${Math.round(Eco.INTEREST * 100)}%・${yen(Eco.SEIZE_AT)}以上で差し押さえ・${yen(Eco.BANKRUPT_AT)}で自己破産</small></span></div>
+      <div class="bank-row"><button class="mini-btn teal" data-borrow ${!can || pl.debt + Eco.LOAN > Eco.MAX_DEBT ? 'disabled' : ''}>${yen(Eco.LOAN)} 借りる</button>
+      <button class="mini-btn primary" data-repay ${!can || !pl.debt || pl.money <= 0 ? 'disabled' : ''}>返す</button></div></div>`;
     $('tab-shop').innerHTML = `<p class="hint">買うたびに品ぞろえが入れ替わります。買った駒・強化は「強化・合成」タブで歩に使えます。</p>
       <div class="shop">${cards}</div>
       <div class="row-between"><span>所持金 ${yen(pl.money)}</span>
-      <button class="mini-btn" data-reroll ${!can || pl.money < Eco.REROLL_COST ? 'disabled' : ''}>品ぞろえを変える ${yen(Eco.REROLL_COST)}</button></div>`;
+      <button class="mini-btn" data-reroll ${!can || pl.money < Eco.REROLL_COST ? 'disabled' : ''}>品ぞろえを変える ${yen(Eco.REROLL_COST)}</button></div>${bank}`;
   }
 
   function renderMarket() {
@@ -247,6 +329,7 @@
     const m = G.market;
     const can = myTurn();
     let html = m.news ? `<div class="news">📰 ${m.news.text}</div>` : '';
+    html += `<p class="hint">物価 ×${m.infl.toFixed(2)}（毎手上がる）。金銀の値段も物価に連動します。次の確定申告まで ${Eco.TAX_EVERY - (m.ply % Eco.TAX_EVERY)}手</p>`;
     html += '<div class="mkt-wrap">';
     for (const k of ['G', 'S']) {
       const c = Eco.COMMODITIES[k];
@@ -275,16 +358,17 @@
     const g = cv.getContext('2d');
     g.scale(dpr, dpr);
     const hist = s.hist;
-    const lo = Math.min(...hist, c.base) * 0.95;
-    const hi = Math.max(...hist, c.base) * 1.05;
+    const base = c.base * G.market.infl;
+    const lo = Math.min(...hist, base) * 0.95;
+    const hi = Math.max(...hist, base) * 1.05;
     const X = (i) => (i / (hist.length - 1)) * (w - 4) + 2;
     const Y = (v) => h - 4 - ((v - lo) / (hi - lo)) * (h - 8);
     // 基準値（平均的な値段）
     g.strokeStyle = 'rgba(0,0,0,0.2)';
     g.setLineDash([4, 4]);
     g.beginPath();
-    g.moveTo(0, Y(c.base));
-    g.lineTo(w, Y(c.base));
+    g.moveTo(0, Y(base));
+    g.lineTo(w, Y(base));
     g.stroke();
     g.setLineDash([]);
     // 面と線
@@ -346,7 +430,8 @@
       return;
     }
     const ups = Fu.UPGRADE_KEYS.filter((k) => sel.ups[k]).map((k) => `${UPGRADES[k].name}${UPGRADES[k].max > 1 ? sel.ups[k] : ''}`);
-    let html = `<div class="forge-head">${moveGridHTML(sel)}<div class="forge-info"><h3>${Fu.pawnName(sel)}</h3>
+    const ep = Fu.epithet(sel);
+    let html = `<div class="forge-head">${moveGridHTML(sel)}<div class="forge-info"><small class="ep">${ep.title}</small><h3>${Fu.pawnName(sel)} <span class="rar r-${ep.rarity}">${ep.rarity}</span></h3>
       <p>戦闘力 ${Fu.power(sel)}　合成 ${sel.fused.length}/${MAX_FUSE}${sel.promo ? '　と金' : ''}</p>
       <p>${ups.join('・') || '強化なし'}</p></div></div>`;
     const items = Fu.UPGRADE_KEYS.filter((k) => pl.items[k] > 0);
@@ -355,10 +440,11 @@
       '<span class="hint">強化アイテムなし（ショップで買えます）</span>'
     }</div>`;
     const parts = Fu.PART_KEYS.filter((k) => pl.parts[k] > 0);
-    html += `<div class="inv-title">駒を合成する（手数料 ${yen(Eco.FUSE_COST)}）</div><div class="inv">${
+    const fc = Eco.fuseCost(G.market);
+    html += `<div class="inv-title">駒を合成する（手数料 ${yen(fc)}）</div><div class="inv">${
       parts
         .map((k) => {
-          const dis = !can || sel.fused.length >= MAX_FUSE || sel.fused.includes(k) || pl.money < Eco.FUSE_COST;
+          const dis = !can || sel.fused.length >= MAX_FUSE || sel.fused.includes(k) || pl.money < fc;
           const note = k === 'G' || k === 'S' ? `<small>（相場${yen(Eco.sellPrice(G.market, k))}）</small>` : '';
           return `<button class="mini-btn primary" data-fuse="${k}" ${dis ? 'disabled' : ''}>${PARTS[k].name}<b>×${pl.parts[k]}</b>${note}</button>`;
         })
@@ -373,13 +459,24 @@
     if (!b || b.disabled || !myTurn()) return;
     const pl = G.players[0];
     if (b.dataset.buy !== undefined) {
-      const it = Eco.buy(pl, +b.dataset.buy, rng, () => G.st.hands[0]++);
+      const it = Eco.buy(pl, +b.dataset.buy, rng, () => G.st.hands[0]++, G.market.infl);
       if (it) {
         log(`「${Eco.itemLabel(it.key).title}」を買った（${yen(it.price)}）`);
         sfx.coin();
       }
     } else if (b.dataset.reroll !== undefined) {
-      if (Eco.reroll(pl, rng)) sfx.tap();
+      if (Eco.reroll(pl, rng, G.market.infl)) sfx.tap();
+    } else if (b.dataset.borrow !== undefined) {
+      if (Eco.borrow(pl)) {
+        log(`🏦 ${yen(Eco.LOAN)} 借りた（借金 ${yen(pl.debt)}）。利息は毎手番${Math.round(Eco.INTEREST * 100)}%…`);
+        sfx.coin();
+      }
+    } else if (b.dataset.repay !== undefined) {
+      const r = Eco.repay(pl);
+      if (r) {
+        log(`🏦 ${yen(r)} 返した（借金 ${yen(pl.debt)}）`);
+        sfx.coin();
+      }
     } else if (b.dataset.trade) {
       const [k, side] = b.dataset.trade.split(':');
       const r = Eco.trade(G.market, k, side, pl, 0);
@@ -395,9 +492,9 @@
       }
     } else if (b.dataset.fuse) {
       if (AI.fuse(G, 0, G.sel.x, G.sel.y, b.dataset.fuse)) {
-        log(`${PARTS[b.dataset.fuse].name}を合成して「${Fu.pawnName(G.st.board[G.sel.y][G.sel.x])}」が生まれた！`);
-        sfx.fuse();
-        haptics.vibrate([20, 30, 20]);
+        const np = G.st.board[G.sel.y][G.sel.x];
+        log(`${PARTS[b.dataset.fuse].name}を合成して「${Fu.fullName(np)}」が生まれた！`);
+        fuseCutin(0, np);
         G.selMoves = Fu.legalMoves(G.st, 0).filter((mm) => !mm.drop && mm.fx === G.sel.x && mm.fy === G.sel.y);
       }
     }
@@ -410,13 +507,77 @@
       renderTab();
     })
   );
+  $('btn-royal').addEventListener('click', () => {
+    if (!myTurn() || G.players[0].royal <= 0 || !Fu.royalTargets(G.st, 0).length) return;
+    G.royal = !G.royal;
+    G.drop = false;
+    G.sel = null;
+    if (G.royal) log('👑 王の逆襲：王のとなりの、なぎ払う歩をタップ（守られていても鎧でもOK）');
+    sfx.tap();
+    render();
+  });
   $('btn-hand').addEventListener('click', () => {
     if (!myTurn() || G.st.hands[0] === 0) return;
     G.drop = !G.drop;
+    G.royal = false;
     G.sel = null;
     sfx.tap();
     render();
   });
+
+  // ---------- 演出 ----------
+  const cutQ = [];
+  let cutT = 0;
+  const cutinBusy = () => cutT > 0 || cutQ.length > 0;
+  function cutin(c) {
+    cutQ.push(c);
+    if (!cutT) nextCutin();
+  }
+  function nextCutin() {
+    const c = cutQ.shift();
+    const el = $('cutin');
+    if (!c) {
+      cutT = 0;
+      el.className = 'cutin hidden';
+      return;
+    }
+    const stars = c.rarity ? '★'.repeat(['N', 'R', 'SR', 'SSR', 'UR'].indexOf(c.rarity) + 1) : '';
+    el.innerHTML = `<div class="ci-burst"></div><div class="ci-band"><div class="ci-kicker">${c.kicker}</div>
+      <div class="ci-title">${c.title}</div><div class="ci-name">${c.name}</div>
+      ${c.rarity ? `<div class="ci-rar r-${c.rarity}">${c.rarity} <span>${stars}</span></div>` : ''}</div>`;
+    el.className = `cutin ${c.kind || ''} ${c.owner ? 'op' : 'me'} ${c.rarity ? 'r-' + c.rarity : ''}`;
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(cutT);
+    cutT = setTimeout(nextCutin, c.rarity === 'UR' || c.rarity === 'SSR' ? 1900 : 1400);
+  }
+  $('cutin').addEventListener('click', () => {
+    clearTimeout(cutT);
+    nextCutin();
+  });
+  function fuseCutin(owner, p) {
+    const ep = Fu.epithet(p);
+    cutin({ kicker: owner === 0 ? '合成成功！' : '相手が合成！', title: ep.title, name: Fu.pawnName(p), rarity: ep.rarity, owner, kind: 'fuse' });
+    if (ep.rarity === 'SSR' || ep.rarity === 'UR') {
+      sfx.rare();
+      shake();
+    } else sfx.fuse();
+    haptics.vibrate([20, 30, 20]);
+  }
+  function shake() {
+    const a = $('app');
+    a.classList.remove('shake');
+    void a.offsetWidth;
+    a.classList.add('shake');
+  }
+  let banT = 0;
+  function banner(text, big) {
+    const el = $('banner');
+    el.textContent = text;
+    el.className = 'banner show' + (big ? ' big' : '');
+    clearTimeout(banT);
+    banT = setTimeout(() => (el.className = 'banner'), big ? 3200 : 2400);
+  }
 
   function show(name) {
     for (const s of ['title', 'howto', 'result']) $('screen-' + s).classList.toggle('hidden', s !== name);

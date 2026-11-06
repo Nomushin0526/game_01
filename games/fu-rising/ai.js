@@ -83,8 +83,24 @@
     }
     return best === -Infinity ? -50000 : best;
   }
-  function chooseMove(st) {
+  // royalLeft: 王の逆襲の残り回数。使うのは「詰みそうなとき」か「王手を逃れられるとき」か「強い歩を消せるとき」
+  function chooseMove(st, royalLeft) {
     const legal = Fu.legalMoves(st, st.turn);
+    const royal = royalLeft > 0 ? Fu.royalTargets(st, st.turn) : [];
+    if (royal.length) {
+      const inChk = Fu.inCheck(st, st.turn);
+      let pick = null;
+      let pv = -Infinity;
+      for (const m of royal) {
+        const p = st.board[m.ty][m.tx];
+        const v = Fu.power(p) + p.ups.armor * 3 + p.fused.length * 4;
+        if (v > pv) {
+          pv = v;
+          pick = m;
+        }
+      }
+      if (!legal.length || (inChk && pv >= 3) || pv >= 12) return pick;
+    }
     if (!legal.length) return null;
     // 持ち歩を打つ手は絞り込んだ候補だけにする
     const cand = candidates(st);
@@ -147,6 +163,12 @@
         if (Eco.trade(m, k, 'buy', pl, me).ok) log.push(`${name}を安値で買った`);
       }
     }
+    // 借金: 利息が重いので、お金に余裕ができたら返す。強い駒が買えそうなら借りる（たまに）
+    if (pl.debt > 0 && pl.money > 40) {
+      const r = Eco.repay(pl, pl.money - 30);
+      if (r) log.push(`借金を¥${r} 返した`);
+    }
+    if (pl.debt === 0 && pl.money < 60 && rng() < 0.12 && Eco.borrow(pl)) log.push(`闇金から¥${Eco.LOAN} 借りた！`);
     // ショップ: 余裕があれば、いちばん役に立ちそうな物を買う（最大2回）
     const want = { R: 9, B: 8, armor: 6, leg: 5, N: 5, L: 4, side: 4, back: 2, pawn: game.st.hands[me] === 0 ? 5 : 1 };
     for (let n = 0; n < 2; n++) {
@@ -154,7 +176,7 @@
       const opts = pl.lineup.map((it, i) => ({ it, i })).filter((o) => o.it.price <= pl.money - 25 && !(pl.items[o.it.key] > 0));
       if (!opts.length || rng() < 0.25) break;
       opts.sort((a, b) => want[b.it.key] / b.it.price - want[a.it.key] / a.it.price);
-      const got = Eco.buy(pl, opts[0].i, rng, () => game.st.hands[me]++);
+      const got = Eco.buy(pl, opts[0].i, rng, () => game.st.hands[me]++, m.infl);
       if (got) log.push(`ショップで「${Eco.itemLabel(got.key).title}」を買った`);
     }
     // 強化と合成: 持っている物を歩に使う
@@ -170,12 +192,14 @@
       }
       const order = ['R', 'B', 'N', 'L', 'G', 'S'];
       for (const k of order) {
-        if (pl.parts[k] <= 0 || pl.money < Eco.FUSE_COST) continue;
-        if ((k === 'G' || k === 'S') && m[k].price > Eco.COMMODITIES[k].base * 1.05) continue; // 高いときは合成せず売り時を待つ
+        if (pl.parts[k] <= 0 || pl.money < Eco.fuseCost(m)) continue;
+        if ((k === 'G' || k === 'S') && m[k].price > Eco.COMMODITIES[k].base * m.infl * 1.05) continue; // 高いときは合成せず売り時を待つ
         const cur = game.st.board[t.y][t.x];
         if (!cur || cur.fused.length >= MAX_FUSE || cur.fused.includes(k)) continue;
         fuse(game, me, t.x, t.y, k);
-        log.push(`歩に${PARTS[k].name}を合成して「${Fu.pawnName(game.st.board[t.y][t.x])}」を生み出した！`);
+        const np = game.st.board[t.y][t.x];
+        log.push(`歩に${PARTS[k].name}を合成して「${Fu.fullName(np)}」を生み出した！`);
+        if (game.onFuse) game.onFuse(me, np);
         break;
       }
     }
@@ -197,13 +221,14 @@
   function fuse(game, owner, x, y, key) {
     const pl = game.players[owner];
     const p = game.st.board[y][x];
-    if (!p || p.owner !== owner || p.t !== 'P' || pl.parts[key] <= 0 || pl.money < Eco.FUSE_COST) return false;
+    const cost = Eco.fuseCost(game.market);
+    if (!p || p.owner !== owner || p.t !== 'P' || pl.parts[key] <= 0 || pl.money < cost) return false;
     if (p.fused.length >= MAX_FUSE || p.fused.includes(key)) return false;
     const np = Fu.clonePiece(p);
     np.fused.push(key);
     game.st.board[y][x] = np;
     pl.parts[key]--;
-    pl.money -= Eco.FUSE_COST;
+    pl.money -= cost;
     return true;
   }
 

@@ -562,3 +562,285 @@
     min-height: 0;
   }
 }
+
+/* ---------- ネタ要素 ---------- */
+/* 王の逆襲ボタン */
+.royal-btn {
+  border-color: #8a1c1c;
+  box-shadow: 0 2px 0 #8a1c1c;
+  color: #8a1c1c;
+}
+.royal-btn.ready {
+  animation: royal-pulse 0.9s ease-in-out infinite;
+}
+.royal-btn.on {
+  background: #d62f2f;
+  color: #fff;
+}
+@keyframes royal-pulse {
+  50% {
+    background: #ffd6d6;
+    transform: scale(1.06);
+  }
+}
+.sq.royal-t::after {
+  content: '👑';
+  position: absolute;
+  inset: 4%;
+  display: grid;
+  place-items: center;
+  font-size: calc(var(--s) * 0.42);
+  border: 3px solid #d62f2f;
+  border-radius: 6px;
+  background: rgba(214, 47, 47, 0.25);
+  animation: royal-pulse 0.7s ease-in-out infinite;
+  pointer-events: none;
+}
+.chip-mini.debt,
+.debt-t {
+  color: #e63946;
+  font-weight: 900;
+}
+.bar-op .chip-mini.debt {
+  color: #ff8a8a;
+}
+
+/* レア度で駒の色が変わる */
+.pc.r-SR {
+  background: linear-gradient(#efe0ff, #c39be6);
+}
+.pc.r-SSR {
+  background: linear-gradient(#fff3b0, #f3b740 60%, #c98a10);
+}
+.pc.r-UR {
+  background: linear-gradient(120deg, #ff9a9e, #fad0c4, #fbc2eb, #a1c4fd, #c2e9fb, #d4fc79, #ff9a9e);
+  background-size: 300% 300%;
+  animation: rainbow 2.4s linear infinite;
+}
+@keyframes rainbow {
+  to {
+    background-position: 300% 0;
+  }
+}
+.forge-info .ep {
+  display: block;
+  font-size: 11px;
+  font-weight: 900;
+  color: #b07ad6;
+}
+.rar {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #fff;
+  vertical-align: middle;
+  background: #9aa3ab;
+}
+.rar.r-R {
+  background: #5fa4e6;
+}
+.rar.r-SR {
+  background: #b07ad6;
+}
+.rar.r-SSR {
+  background: #e0a400;
+}
+.rar.r-UR {
+  background: linear-gradient(90deg, #ff5f6d, #ffc371, #47e891, #4facfe, #b06ab3);
+}
+
+/* 銀行 */
+.bank {
+  margin-top: 8px;
+  padding: 8px;
+  border: 2px dashed #b08a4a;
+  border-radius: 10px;
+  background: #fff7e6;
+  font-size: 12px;
+}
+.bank-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.bank small {
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+.bank-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.bank-row .mini-btn {
+  flex: 1;
+}
+
+/* ニュース速報 */
+.banner {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: calc(env(safe-area-inset-top) + 34px);
+  z-index: 30;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #1d3557;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.4;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  transform: translateY(-160%);
+  opacity: 0;
+  transition: transform 0.3s, opacity 0.3s;
+  pointer-events: none;
+}
+.banner.show {
+  transform: none;
+  opacity: 1;
+}
+.banner.big {
+  background: #c1121f;
+  font-size: 15px;
+}
+.banner.big::before {
+  content: '速報';
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #fff;
+  color: #c1121f;
+}
+
+/* 画面の揺れ */
+.app.shake {
+  animation: shake 0.5s;
+}
+@keyframes shake {
+  10%,
+  50%,
+  90% {
+    transform: translate(-6px, 3px);
+  }
+  30%,
+  70% {
+    transform: translate(6px, -3px);
+  }
+}
+
+/* 合成・必殺技のカットイン */
+.cutin {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.cutin.show {
+  opacity: 1;
+}
+.ci-burst {
+  position: absolute;
+  width: 220cqmax;
+  height: 220cqmax;
+  background: repeating-conic-gradient(rgba(255, 220, 120, 0.55) 0 8deg, transparent 8deg 18deg);
+  animation: spin 6s linear infinite;
+}
+.cutin.royal .ci-burst {
+  background: repeating-conic-gradient(rgba(255, 70, 70, 0.6) 0 8deg, transparent 8deg 18deg);
+}
+.cutin.r-UR .ci-burst {
+  background: repeating-conic-gradient(#ff5f6d99 0 6deg, transparent 6deg 12deg, #47e89199 12deg 18deg, transparent 18deg 24deg, #4facfe99 24deg 30deg, transparent 30deg 36deg);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ci-band {
+  position: relative;
+  width: 100%;
+  padding: 16px 12px 18px;
+  text-align: center;
+  color: #fff;
+  background: linear-gradient(90deg, transparent, rgba(20, 20, 40, 0.92) 12%, rgba(20, 20, 40, 0.92) 88%, transparent);
+  transform: skewY(-6deg);
+  animation: band-in 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.cutin.op .ci-band {
+  animation-name: band-in-r;
+}
+@keyframes band-in {
+  from {
+    transform: skewY(-6deg) translateX(-110%);
+  }
+}
+@keyframes band-in-r {
+  from {
+    transform: skewY(-6deg) translateX(110%);
+  }
+}
+.ci-kicker {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  color: #ffd166;
+}
+.ci-title {
+  font-family: 'Yuji Syuku', serif;
+  font-size: clamp(26px, 10cqw, 44px);
+  line-height: 1.2;
+  text-shadow: 0 3px 0 #000;
+  animation: title-pop 0.5s 0.15s both cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.cutin.royal .ci-title {
+  color: #ff6b6b;
+}
+@keyframes title-pop {
+  from {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+.ci-name {
+  font-size: 18px;
+  font-weight: 900;
+}
+.ci-rar {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 1px 12px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 900;
+  background: #9aa3ab;
+  animation: title-pop 0.4s 0.4s both;
+}
+.ci-rar span {
+  color: #ffd166;
+  font-size: 13px;
+}
+.ci-rar.r-R {
+  background: #5fa4e6;
+}
+.ci-rar.r-SR {
+  background: #b07ad6;
+}
+.ci-rar.r-SSR {
+  background: #e0a400;
+}
+.ci-rar.r-UR {
+  background: linear-gradient(90deg, #ff5f6d, #ffc371, #47e891, #4facfe, #b06ab3);
+  background-size: 200% 100%;
+  animation: title-pop 0.4s 0.4s both, rainbow 1.5s linear infinite;
+}
+.ci-rar.r-UR span {
+  color: #fff;
+}
