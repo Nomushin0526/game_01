@@ -1,0 +1,140 @@
+/* 車窓ラン ― このゲームだけ横画面 */
+body .app.wide {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-width: calc(100dvh * 2.2);
+  margin: 0 auto;
+  background: #111;
+  touch-action: none;
+}
+/* PC: 16:9 の横長の枠 */
+@media (pointer: fine) {
+  body .app.wide {
+    width: min(100vw, calc(100dvh * 16 / 9));
+    height: min(100dvh, calc(100vw * 9 / 16));
+    margin-top: calc((100dvh - min(100dvh, calc(100vw * 9 / 16))) / 2);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  }
+}
+#gl,
+#fx {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+#fx {
+  pointer-events: none;
+}
+.hidden {
+  display: none !important;
+}
+
+/* 縦向きのときに「横にしてね」（ほかのゲームと逆） */
+@media (orientation: landscape) and (pointer: coarse) {
+  .rotate-notice {
+    display: none !important;
+  }
+}
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate-notice {
+    display: grid !important;
+  }
+  .rotate-notice .icon {
+    animation: rotate-hint-l 1.6s ease-in-out infinite;
+  }
+}
+@keyframes rotate-hint-l {
+  0%,
+  30% {
+    transform: rotate(0deg);
+  }
+  60%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+/* 画面 */
+.screen {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  overflow-y: auto;
+  background: rgba(10, 12, 20, 0.35);
+}
+.screen.dim {
+  background: rgba(10, 12, 20, 0.6);
+}
+.card-panel {
+  width: min(460px, 90%);
+  background: rgba(255, 250, 240, 0.95);
+  border: 3px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 6px 0 var(--line);
+  padding: 14px 18px;
+  text-align: center;
+}
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: var(--primary-dark);
+}
+.logo {
+  margin: 2px 0 4px;
+  font-family: 'Yuji Syuku', serif;
+  font-size: min(48px, 11dvh);
+  line-height: 1.1;
+}
+.lead {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+.btn-row {
+  display: flex;
+  gap: 10px;
+}
+.btn-row .btn {
+  min-height: 46px;
+  padding: 8px 12px;
+}
+.row-links {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+.howto {
+  text-align: left;
+}
+.howto h2 {
+  margin: 0 0 6px;
+  text-align: center;
+}
+.howto p {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.result-head {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 900;
+}
+.result-head.win {
+  color: var(--primary);
+}
+.result-sub {
+  margin: 4px 0 12px;
+  font-weight: 800;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}

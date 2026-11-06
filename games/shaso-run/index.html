@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>車窓ラン</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800;900&family=Yuji+Syuku&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../shared/ui.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="app-body">
+    <div id="app" class="app wide">
+      <canvas id="gl"></canvas>
+      <canvas id="fx"></canvas>
+
+      <!-- タイトル -->
+      <section id="screen-title" class="screen">
+        <div class="card-panel">
+          <p class="eyebrow">車の窓から見える景色を走れ</p>
+          <h1 class="logo">車窓ラン</h1>
+          <p class="lead">ステージ1：日本橋 → 品川（国道15号 第一京浜）</p>
+          <div class="btn-row">
+            <button id="btn-start" class="btn btn-primary">出発！</button>
+            <button id="btn-howto" class="btn btn-ghost">あそびかた</button>
+          </div>
+          <div class="row-links">
+            <a href="../index.html" class="link">← ゲーム一覧</a>
+            <button id="btn-sound" class="link" type="button">🔊 サウンド ON</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- あそびかた -->
+      <section id="screen-howto" class="screen hidden">
+        <div class="card-panel howto">
+          <h2>あそびかた</h2>
+          <p><b>タップでジャンプ</b>、空中でもう一度タップで<b>2段ジャンプ</b>。足場が切れたら下へ落ちます。</p>
+          <p><b>白線・ガードレール・フェンス・建物の屋上</b>はいつでも走れます。<b>自販機・標識・並走する車</b>は上に着地すれば乗れますが、横からぶつかると転びます。</p>
+          <p>窓のすぐ近くの物ほど速く流れていきます。<b>窓の右端から外へ出たら、車に置いていかれてアウト</b>。遠くの屋上ほど流れがゆっくりなので、前へ進みやすい。<b>赤信号</b>で車が止まったら、そのあいだに前へ。</p>
+          <button class="btn btn-primary" data-close="howto">とじる</button>
+        </div>
+      </section>
+
+      <!-- 結果 -->
+      <section id="screen-result" class="screen dim hidden">
+        <div class="card-panel">
+          <h2 id="result-head" class="result-head"></h2>
+          <p id="result-sub" class="result-sub"></p>
+          <div class="btn-row">
+            <button id="btn-again" class="btn btn-primary">もう一回</button>
+            <a href="../index.html" class="btn btn-ghost">ゲーム一覧へ</a>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="rotate-notice"><div class="icon">📱</div><p>スマホを横向きにしてね</p></div>
+
+    <script src="../../shared/storage.js"></script>
+    <script src="../../shared/haptics.js"></script>
+    <script src="../../shared/audio.js"></script>
+    <script src="../../shared/vendor/three.min.js"></script>
+    <script src="runner.js"></script>
+    <script src="world.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>
