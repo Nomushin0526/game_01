@@ -14,31 +14,34 @@
       name: '東京・都心',
       road: '国道15号 第一京浜',
       seed: 1501,
-      length: 1400,
-      speed: 7.5, // m/s（ゲーム用に実際よりゆっくり）
+      length: 2400,
+      speed: 14, // m/s（約50km/h）
       sky: ['#3f78bf', '#bcd2e6', '#7c8187'],
       fog: '#c3d1dc',
-      landmarks: [{ x: -1000, kind: 'tokyoTower' }],
-      signals: [220, 520, 780, 1080, 1290],
+      landmarks: [{ x: -1760, kind: 'tokyoTower' }],
+      signals: [380, 900, 1350, 1800, 2150],
       places: [
         [0, '日本橋'],
-        [330, '銀座'],
-        [700, '新橋'],
-        [1000, '浜松町'],
-        [1400, '品川'],
+        [560, '銀座'],
+        [1150, '新橋'],
+        [1700, '浜松町'],
+        [2400, '品川'],
       ],
     },
   ];
 
   // ---------- 調整用の数値（画面の高さ H を1とした単位） ----------
   const P = {
-    runH: 0.165, // 人型の高さ
+    runH: 0.15, // 人型の高さ
     run: 0.95, // 走る速さ（毎秒）
     g: 3.1, // 重力
     jump1: 1.32, // 1段目のジャンプ
     jump2: 1.12, // 2段目
     coyote: 0.09,
     stun: 0.6, // ぶつかったときのよろけ時間
+    knock: 0.1, // ぶつかると後ろへ離される量（画面幅に対する割合）
+    regain: 0.08, // 赤信号で止まっている間に取り戻す速さ（毎秒）
+    stride: 3.2, // 1秒あたりの走りの周期（速いほど脚の回転が速い）
     inv: 1.2, // ぶつかった直後の無敵時間
     winL: 0.035, // 窓の左端（画面幅に対する割合）
     winR: 0.965,
@@ -98,7 +101,7 @@
       st,
       rng,
       camX: 0,
-      speed: 0,
+      speed: st.speed * 0.7,
       bump: 0,
       t: 0,
       // 信号: 止まる位置（進んだ距離）と、赤かどうか
@@ -107,7 +110,9 @@
       stopping: null,
       carT: 2,
       // 人型
-      rx: W * 0.42,
+      rx: W * 0.5,
+      lag: 0, // 車から離された量（px）
+      lagShow: 0,
       ry: 0,
       vy: 0,
       vx: 0,
@@ -171,12 +176,12 @@
         say('青信号', 1);
       }
     }
-    const acc = target > S.speed ? 2.2 : 3.2;
+    const acc = target > S.speed ? 3.5 : 3.6;
     S.speed += Math.max(-acc * dt, Math.min(acc * dt, target - S.speed));
     S.camX -= S.speed * dt;
     // 車の揺れ（速いほど細かく揺れる）
     S.t += dt;
-    S.bump = S.speed > 0.2 ? Math.sin(S.t * 17) * 0.004 + Math.sin(S.t * 5.3) * 0.006 * (S.speed / v) : 0;
+    S.bump = S.speed > 0.2 ? (Math.sin(S.t * 23) * 0.006 + Math.sin(S.t * 7.3) * 0.01 + (Math.random() - 0.5) * 0.004) * (S.speed / v) : 0;
   }
   function trafficCars(dt) {
     S.carT -= dt;
@@ -200,31 +205,32 @@
     return (S.speed * f) / p.z;
   }
 
+  // 人型は基本的に画面の中央で、車と同じ速さで走る。ぶつかるたびに後ろへ離されていく
   function stepRunner(dt) {
     const plats = W3.platformsList();
-    const runV = P.run * H * (S.stun > 0 ? 0.25 : 1);
     S.stun = Math.max(0, S.stun - dt);
     S.inv = Math.max(0, S.inv - dt);
+    // 赤信号で車が止まっている間だけ、前へ追いつける
+    if (S.speed < 0.6) S.lag = Math.max(0, S.lag - P.regain * W * dt);
+    S.lagShow += (S.lag - S.lagShow) * Math.min(1, dt * 5);
+    S.rx = W * 0.5 + S.lagShow;
     const halfW = P.runH * H * 0.16;
     const prevY = S.ry;
+    // 脚の回転は車の速さに合わせる（止まっているときはその場で足踏み）
+    S.phase += dt * (S.speed > 0.5 ? P.stride * (0.6 + (0.4 * S.speed) / S.st.speed) : P.stride * 0.8);
     if (S.on) {
       const sp = screenPlat2(S.on);
-      S.vx = platVel(S.on) - runV;
-      S.rx += S.vx * dt;
       S.ry = sp.top;
-      S.phase += dt * 2.6;
-      // 足場の端を越えたら落ちる
+      // 足場の端が流れていったら落ちる
       if (S.rx < sp.x0 - halfW * 0.3 || S.rx > sp.x1 + halfW * 0.3 || !plats.includes(S.on)) {
         S.on = null;
         S.air = 0;
-        S.jumps = Math.max(S.jumps, 0);
         S.vy = 0;
       }
     } else {
       S.air += dt;
       S.vy += P.g * H * dt;
       S.ry += S.vy * dt;
-      S.rx += S.vx * dt;
       // 着地（上から乗ったときだけ）
       if (S.vy >= 0) {
         let best = null;
@@ -255,13 +261,10 @@
         const top = S.ry - P.runH * H * 0.9;
         if (S.rx + halfW < sp.x0 || S.rx - halfW > sp.x1) continue;
         if (S.ry <= sp.top + 3 || top >= sp.bot) continue;
-        hit(p, sp);
+        hit(p);
         break;
       }
     }
-    // 窓の左端より前へは行けない
-    const minX = W * (P.winL + 0.06);
-    if (S.rx < minX) S.rx = minX;
     // 窓の右端から外へ出たら、置いていかれた
     if (S.rx > W * P.winR + halfW) gameOver();
   }
@@ -278,10 +281,8 @@
   function jump() {
     if (!S || S.over || S.clear) return;
     if (S.on || S.air < P.coyote) {
-      const v0 = S.on ? platVel(S.on) - P.run * H : S.vx;
       S.on = null;
       S.vy = -P.jump1 * H;
-      S.vx = v0;
       S.jumps = 1;
       S.air = P.coyote;
       sfx.jump();
@@ -297,14 +298,17 @@
       S.lastLand = p.name;
     }
   }
-  function hit(p, sp) {
+  function hit(p) {
     S.hits++;
     S.stun = P.stun;
     S.inv = P.inv;
-    S.on = null;
-    S.rx = sp.x1 + P.runH * H * 0.18;
-    S.vy = -0.5 * H;
-    S.vx = (S.speed * f) / p.z;
+    S.lag += P.knock * W;
+    // その場でつまずいて少し跳ねる
+    if (S.on) {
+      S.on = null;
+      S.air = P.coyote;
+    }
+    S.vy = Math.min(S.vy, -0.45 * H);
     say(`${p.name}にぶつかった！`, 1.2);
     sfx.hit();
     haptics.vibrate(60);
@@ -353,14 +357,22 @@
     if (!dust) dust = makeDust();
     g.drawImage(dust, wl, wt, wr - wl, wb - wt);
     // 人型
+    drawSpeedLines(wl, wr, wt, wb);
     const blink = S.inv > 0 && Math.floor(S.inv * 12) % 2 === 0;
     if (!blink || S.over) {
       const st = S.over ? 'air' : S.on ? 'run' : 'air';
-      const tilt = S.stun > 0 ? -0.5 * (S.stun / P.stun) : S.on ? 0 : Math.max(-0.15, Math.min(0.15, S.vy / H / 8));
-      RN.draw(g, S.rx, S.ry, P.runH * H, st, S.phase, tilt);
+      // よろけ: 前のめりに傾く / ジャンプ: 上昇中は少し起き、落下中は前へ
+      const tilt = S.stun > 0 ? 0.35 * Math.sin((S.stun / P.stun) * Math.PI) : S.on ? -0.08 : Math.max(-0.2, Math.min(0.12, S.vy / H / 7));
+      const sh = P.runH * H;
+      // 残像（速さに合わせて後ろへ）
+      const k = S.speed / S.st.speed;
+      if (k > 0.3 && !S.over) {
+        for (let i = 3; i >= 1; i--) RN.draw(g, S.rx + i * sh * 0.13 * k, S.ry + (S.on ? 0 : (S.vy * i) / 90), sh, st, S.phase - i * 0.035, tilt, 0.1 * (4 - i) * k);
+      }
+      RN.draw(g, S.rx, S.ry, sh, st, S.phase, tilt);
     }
     // 置いていかれそう: 右端が赤く
-    const danger = Math.max(0, (S.rx - W * 0.7) / (W * 0.27));
+    const danger = Math.max(0, (S.rx - W * 0.62) / (W * 0.33));
     if (danger > 0) {
       const dg = g.createLinearGradient(wr - W * 0.25, 0, wr, 0);
       dg.addColorStop(0, 'rgba(220,30,30,0)');
@@ -397,6 +409,30 @@
     g.fillRect(0, wb + H * 0.012, W, 2);
 
     drawHud();
+  }
+  // 流れる光の線（速さが出ているときだけ）
+  const lines = [];
+  function drawSpeedLines(wl, wr, wt, wb) {
+    const k = S.speed / S.st.speed;
+    while (lines.length < 26) lines.push({ x: wl + Math.random() * (wr - wl), y: wt + Math.random() * (wb - wt), l: 0.05 + Math.random() * 0.18, v: 1.5 + Math.random() * 2.5, a: Math.random() });
+    if (k < 0.25) return;
+    g.save();
+    g.lineCap = 'round';
+    for (const ln of lines) {
+      ln.x += ln.v * W * k * 0.016;
+      if (ln.x > wr + 40) {
+        ln.x = wl - ln.l * W;
+        ln.y = wt + Math.random() * (wb - wt);
+      }
+      const near = (ln.y - wt) / (wb - wt); // 下ほど近い→速く濃く
+      g.strokeStyle = `rgba(255,255,255,${(0.05 + near * 0.12) * k * ln.a})`;
+      g.lineWidth = 1 + near * 2;
+      g.beginPath();
+      g.moveTo(ln.x, ln.y);
+      g.lineTo(ln.x + ln.l * W * k, ln.y);
+      g.stroke();
+    }
+    g.restore();
   }
   let dust = null;
   function makeDust() {
@@ -472,7 +508,7 @@
     g.font = `800 ${Math.round(H * 0.032)}px "M PLUS Rounded 1c", sans-serif`;
     g.fillText(`${st.road}　いま：${placeNow()}`, W * 0.06, H * 0.025);
     g.textAlign = 'right';
-    g.fillText(`${Math.round(S.speed * 3.6 * 2)}km/h　ぶつかった ${S.hits}`, W * 0.94, H * 0.025);
+    g.fillText(`${Math.round(S.speed * 3.6)}km/h　ぶつかった ${S.hits}`, W * 0.94, H * 0.025);
     // 信号
     if (S.stopping) {
       g.fillStyle = '#ff4d4d';
@@ -505,7 +541,8 @@
       if (-S.camX >= S.st.length) stageClear();
     } else if (S.over) {
       // 置いていかれる: 人型が右へ流れて消える
-      S.rx += (S.speed * f) / W3.Z.line * dt;
+      S.lag += W * 0.5 * dt;
+      S.rx = W * 0.5 + S.lag;
       driveCar(dt);
     }
     W3.render(S.camX, S.bump);

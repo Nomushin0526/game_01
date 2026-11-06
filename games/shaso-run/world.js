@@ -16,7 +16,7 @@
     pole: 8.2, // 電柱
     vend: 9.6, // 自販機
     fence: 10.4, // フェンス
-    front: 22, // 手前の建物の正面（歩道と空地の奥）
+    front: 24, // 手前の建物の正面（歩道と空地の奥）
     back: 40, // 奥のビル
   };
 
@@ -592,16 +592,13 @@
     for (let x = X0 - 8; x > X1; x -= 14 + r() * 10) {
       if (r() < 0.3) continue;
       const s2 = 5.5 + r() * 2;
-      for (const rot of [0, Math.PI / 2]) {
-        const t = new T.Mesh(new T.PlaneGeometry(s2, s2), treeM);
-        t.position.set(x, s2 / 2, -(Z.front - 6));
-        t.rotation.y = rot;
-        t.castShadow = true;
-        scene.add(t);
-      }
+      const t = new T.Mesh(new T.PlaneGeometry(s2, s2), treeM);
+      t.position.set(x, s2 / 2, -(Z.front - 6));
+      t.castShadow = true;
+      scene.add(t);
     }
     // 標識（上の板に乗れる）
-    for (let x = X0 - 60; x > X1; x -= 110 + r() * 90) {
+    for (let x = X0 - 130; x > X1; x -= 110 + r() * 90) {
       box(0.14, 3.6, 0.14, mat({ color: '#9aa0a6' }), x, 1.8, -Z.sign);
       const plate = new T.Mesh(new T.PlaneGeometry(2.6, 1.6), mat({ map: TEX.sign }));
       plate.position.set(x - 0.9, 3.9, -Z.sign + 0.05);
@@ -610,7 +607,7 @@
     }
     // 自販機（上に乗れる・横からぶつかる）
     const vendM = [mat({ map: TEX.vend }), mat({ color: '#d8dde0' })];
-    for (let x = X0 - 40; x > X1; x -= 45 + r() * 70) {
+    for (let x = X0 - 90; x > X1; x -= 45 + r() * 70) {
       const n = r() < 0.4 ? 2 : 1;
       for (let i = 0; i < n; i++) {
         const vx = x - i * 1.05;
@@ -626,8 +623,8 @@
     let bx = X0;
     while (bx > X1) {
       const w = 8 + r() * 14;
-      const floors = 2 + Math.floor(r() * 2);
-      const fh = 3.2;
+      const floors = r() < 0.7 ? 2 : 3;
+      const fh = 3.0;
       const h = floors * fh + 0.5;
       const depth = 12 + r() * 8;
       const cols = Math.max(2, Math.round(w / 2.8));
