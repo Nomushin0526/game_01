@@ -8,12 +8,22 @@
 
   // ---------- 工程 ----------
   const STEPS = [
-    { key: 'rough', name: '① 荒削り', tool: '丸ノミ', time: 22, hint: '指を上下に動かして角を落とし、形を出す。指をバットに近づけるほど深く削れる', width: 2.2, rate: 16, roughAfter: 1 },
-    { key: 'fine', name: '② 仕上げ削り', tool: '平ノミ', time: 16, hint: 'でこぼこをならして、点線（理想の形）に合わせる', width: 1.2, rate: 5, roughAfter: 0.6 },
-    { key: 'sand', name: '③ やすりがけ', tool: '紙やすり #240', time: 12, hint: 'バットの上を指でこする。よくこすった所ほどなめらかに' },
-    { key: 'finish', name: '④ ニス塗り', tool: 'ニスと布', time: 10, hint: 'まんべんなく塗ってツヤを出す。やすりが足りないとツヤが出にくい' },
+    { key: 'rough', name: '① 荒削り', tool: '丸ノミ', time: 35, hint: '指を上下に動かして角を落とし、形を出す。刃先は指の斜め上（バット側）。指をバットに近づけるほど深く削れる', width: 2.2, rate: 16, roughAfter: 1 },
+    { key: 'fine', name: '② 仕上げ削り', tool: '平ノミ', time: 25, hint: 'でこぼこをならして、点線（理想の形）に合わせる', width: 1.2, rate: 5, roughAfter: 0.6 },
+    { key: 'sand', name: '③ やすりがけ', tool: '紙やすり #240', time: 20, hint: 'バットの上を指でこする。よくこすった所ほどなめらかに' },
+    { key: 'finish', name: '④ ニス塗り', tool: 'ニスと布', time: 16, hint: 'まんべんなく塗ってツヤを出す。やすりが足りないとツヤが出にくい' },
   ];
-  const GAIN = 2.6; // 指の距離 → 削る深さ（指を刃より外に置けるように）
+  // 刃先は指から離れた所（斜め上・内側）に出る。指で刃先が隠れないように
+  const OFF_X = 46; // 刃先と指の横の距離(px)
+  const OFF_Y = 84; // 刃先は指より上
+  const GAIN = 1.7; // 指の距離 → 削る深さ
+  const isCut = (k) => k === 'rough' || k === 'fine';
+  // 指の位置 → 刃先の位置
+  function tipOf(tc, ax, ppc) {
+    const side = tc.x >= ax ? 1 : -1;
+    const depth = Math.max(0, Math.abs(tc.x - ax) - OFF_X) / (ppc * GAIN);
+    return { side, depth, x: ax + side * depth * ppc, y: tc.y - OFF_Y };
+  }
 
   // ---------- ランク ----------
   const RANKS = [
@@ -84,18 +94,19 @@
     const s = STEPS[G.step];
     const tc = G.touch;
     if (!tc) return;
-    const y = fromScreenY(tc.y);
-    if (y < -2 || y > B.LEN + 2) return;
     const ax = W / 2;
     const ppc = pxPerCm();
+    const tip = tipOf(tc, ax, ppc);
+    const y = fromScreenY(isCut(s.key) ? tip.y : tc.y);
+    if (y < -2 || y > B.LEN + 2) return;
     const st = B.st;
     const iC = Math.round((clamp(y, 0, B.LEN) / B.LEN) * B.ROWS);
     // 指の動きの速さ（こする工程で使う）
     const mv = G.lastTouch ? Math.hypot(tc.x - G.lastTouch.x, tc.y - G.lastTouch.y) / Math.max(dt, 0.001) : 0;
     G.lastTouch = { x: tc.x, y: tc.y };
     if (s.key === 'rough' || s.key === 'fine') {
-      const depth = Math.abs(tc.x - ax) / (ppc * GAIN);
-      const side = tc.x >= ax ? 1 : -1;
+      const depth = tip.depth;
+      const side = tip.side;
       const half = Math.max(1, Math.round((s.width / 2 / B.LEN) * B.ROWS));
       let cut = 0;
       for (let i = iC - half; i <= iC + half; i++) {
@@ -202,7 +213,9 @@
     const grad = rk.grad.length > 2 ? `linear-gradient(120deg, ${rk.grad.join(', ')})` : `linear-gradient(140deg, ${rk.grad[0]}, ${rk.grad[1]})`;
     card.style.background = grad;
     card.className = 'rank-card' + (rk.id === 'UR' ? ' ur' : '') + (rk.id === 'SSR' ? ' ssr' : '');
-    $('rank-id').textContent = rk.id;
+    // 「なし」はランク表示そのものを出さない
+    $('rank-id').textContent = rk.id === 'なし' ? '' : rk.id;
+    $('rank-id').classList.toggle('hidden', rk.id === 'なし');
     $('rank-name').textContent = rk.name;
     $('rank-comment').textContent = '「' + rk.comments[Math.floor(Math.random() * rk.comments.length)] + '」';
     $('rank-score').innerHTML = `${sc.total}点<small>形 ${Math.round(sc.shape * 100)}　なめらかさ ${Math.round(sc.smooth * 100)}　ツヤ ${Math.round(sc.shine * 100)}</small>`;
@@ -255,18 +268,22 @@
     // 道具
     const tc = G.touch;
     if (tc) {
-      const y = fromScreenY(tc.y);
-      const side = tc.x >= ax ? 1 : -1;
-      if (s.key === 'rough' || s.key === 'fine') {
-        const depth = Math.abs(tc.x - ax) / (ppc * GAIN);
-        const tipX = ax + side * depth * ppc;
-        drawChisel(tipX, tc.y, side, s.key === 'rough');
-        // 指の位置の目印
-        g.strokeStyle = 'rgba(255,255,255,0.35)';
+      if (isCut(s.key)) {
+        const tip = tipOf(tc, ax, ppc);
+        // 刃先の高さの横線（どこを削っているか）
+        g.strokeStyle = 'rgba(255,230,150,0.55)';
+        g.setLineDash([3, 4]);
         g.beginPath();
-        g.arc(tc.x, tc.y, 16, 0, 7);
+        g.moveTo(ax - 40, tip.y);
+        g.lineTo(ax + 40, tip.y);
         g.stroke();
-        void y;
+        g.setLineDash([]);
+        // ノミは刃先から指の方へ伸びる（指で柄を持っている形）
+        drawChisel(tip.x, tip.y, tc.x, tc.y, s.key === 'rough');
+        g.fillStyle = '#ffd166';
+        g.beginPath();
+        g.arc(tip.x, tip.y, 3, 0, 7);
+        g.fill();
       } else {
         drawPad(tc.x, tc.y, s.key);
       }
@@ -278,39 +295,42 @@
     g.fillStyle = t < 0.25 ? '#ff6b6b' : '#ffd166';
     g.fillRect(16, 74, (W - 32) * Math.max(0, t), 6);
   }
-  function drawChisel(x, y, side, round) {
+  function drawChisel(x, y, fx2, fy2, round) {
+    const ang = Math.atan2(fy2 - y, fx2 - x);
+    const len = Math.max(60, Math.hypot(fx2 - x, fy2 - y) + 30);
     g.save();
     g.translate(x, y);
-    g.scale(side, 1);
+    g.rotate(ang);
     // 刃（鋼）
+    const blade = Math.min(60, len * 0.45);
     const grd = g.createLinearGradient(0, -6, 0, 6);
-    grd.addColorStop(0, '#e9eef2');
-    grd.addColorStop(0.5, '#9aa4ad');
-    grd.addColorStop(1, '#d5dbe0');
+    grd.addColorStop(0, '#eef2f5');
+    grd.addColorStop(0.5, '#98a2ab');
+    grd.addColorStop(1, '#d8dee3');
     g.fillStyle = grd;
     g.beginPath();
     if (round) {
       g.moveTo(0, 0);
-      g.quadraticCurveTo(6, -7, 70, -6);
-      g.lineTo(70, 6);
-      g.quadraticCurveTo(6, 7, 0, 0);
+      g.quadraticCurveTo(5, -6, blade, -5);
+      g.lineTo(blade, 5);
+      g.quadraticCurveTo(5, 6, 0, 0);
     } else {
-      g.moveTo(0, -5);
-      g.lineTo(70, -5);
-      g.lineTo(70, 5);
-      g.lineTo(3, 5);
+      g.moveTo(0, -4);
+      g.lineTo(blade, -4);
+      g.lineTo(blade, 4);
+      g.lineTo(3, 4);
     }
     g.fill();
-    // 柄（木）
+    // 口金と柄（木）
+    g.fillStyle = '#c9cfd4';
+    g.fillRect(blade - 2, -7, 6, 14);
     const hg = g.createLinearGradient(0, -8, 0, 8);
     hg.addColorStop(0, '#a5713f');
     hg.addColorStop(1, '#6b4321');
     g.fillStyle = hg;
     g.beginPath();
-    g.roundRect ? g.roundRect(70, -8, 90, 16, 6) : g.rect(70, -8, 90, 16);
+    g.roundRect ? g.roundRect(blade + 4, -8, len - blade, 16, 7) : g.rect(blade + 4, -8, len - blade, 16);
     g.fill();
-    g.fillStyle = '#c9cfd4';
-    g.fillRect(68, -9, 6, 18);
     g.restore();
   }
   function drawPad(x, y, key) {
@@ -378,7 +398,7 @@
       if (G.t <= 0) nextStep();
     }
     const tc = G && G.touch;
-    const zoom = tc && !G.over ? { y: clamp(fromScreenY(tc.y), 0, B.LEN) } : null;
+    const zoom = tc && !G.over ? { y: clamp(fromScreenY(isCut(STEPS[G.step].key) ? tc.y - OFF_Y : tc.y), 0, B.LEN) } : null;
     const s = Math.round(Math.min(W, H) * 0.36);
     const spinning = !G || !G.over || true;
     B.render(dt, spinning, W, H, zoom, zoom ? { x: W - s - 10, y: 92, s } : null);
@@ -458,7 +478,7 @@
   resize();
   soundLabel();
   const best = storage.get('bat.best', null);
-  if (best !== null) $('title-best').textContent = `これまでの最高 ${best}点（${rankOf(best).id}）`;
+  if (best !== null) $('title-best').textContent = `これまでの最高 ${best}点${rankOf(best).id === 'なし' ? '' : `（${rankOf(best).id}）`}`;
   requestAnimationFrame(loop);
   window.BatDebug = { get G() { return G; }, score, B, nextStep, toScreen, fromScreenY, pxPerCm };
 })();
