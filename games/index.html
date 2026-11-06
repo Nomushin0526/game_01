@@ -145,7 +145,21 @@
         place-items: center;
         font-size: 56px;
       }
-            .thumb-soon {
+      .thumb-bat {
+        background: radial-gradient(circle at 50% 40%, #4a3a2c, #1d1814);
+        display: grid;
+        place-items: center;
+      }
+      .thumb-bat span {
+        width: 150px;
+        height: 18px;
+        border-radius: 4px 40px 40px 4px;
+        background: linear-gradient(#f0d2a2, #c79a62 60%, #a77a45);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);
+        transform: rotate(-20deg);
+        clip-path: polygon(0 30%, 4% 0, 8% 30%, 45% 32%, 100% 0, 100% 100%, 45% 68%, 8% 70%, 4% 100%, 0 70%);
+      }
+      .thumb-soon {
         background: repeating-linear-gradient(45deg, #f3eee2 0 14px, #ebe4d4 14px 28px);
         display: grid;
         place-items: center;
@@ -213,6 +227,15 @@
             <span class="tag">横画面ランゲーム</span>
             <h2>車窓ラン（試作）</h2>
             <p>車の窓から見える景色の上を走れ。白線・ガードレール・屋上を跳び移って、車に置いていかれるな。</p>
+          </div>
+        </a>
+
+        <a class="card" href="bat-craft/index.html">
+          <div class="thumb thumb-bat"><span aria-hidden="true"></span></div>
+          <div class="body">
+            <span class="tag">職人ゲーム</span>
+            <h2>バット職人</h2>
+            <p>旋盤で回る角材をノミで削り、やすりで磨き、ニスで仕上げる。ただの角材から究極のバット（UR）まで。</p>
           </div>
         </a>
 

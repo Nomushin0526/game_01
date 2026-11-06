@@ -1,0 +1,272 @@
+/* バット職人 ― スマホ縦画面 */
+.app {
+  background: #1d1814;
+}
+#gl,
+#fx {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+#gl {
+  touch-action: none;
+}
+.hidden {
+  display: none !important;
+}
+
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: #fff;
+}
+.hud-top {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  padding: calc(env(safe-area-inset-top) + 14px) 16px 8px;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), transparent);
+}
+.hud-top b {
+  font-size: 22px;
+  font-weight: 900;
+  margin-right: 10px;
+}
+.hud-top span {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 13px;
+  font-weight: 800;
+}
+.hud-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 14px calc(env(safe-area-inset-bottom) + 12px);
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7) 40%);
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.hint {
+  flex: 1;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.55;
+  text-shadow: 0 1px 3px #000;
+}
+.next {
+  pointer-events: auto;
+  width: auto;
+  min-height: 44px;
+  padding: 8px 14px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 40%;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 0;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  opacity: 0;
+  transform: scaleY(0);
+  transition: 0.2s;
+  pointer-events: none;
+}
+.banner.show {
+  opacity: 1;
+  transform: none;
+}
+.banner b {
+  font-family: 'Yuji Syuku', serif;
+  font-size: 32px;
+}
+.banner span {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffd166;
+}
+
+/* 画面 */
+.screen {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  overflow-y: auto;
+  background: rgba(15, 10, 6, 0.45);
+}
+.screen.dim {
+  background: rgba(15, 10, 6, 0.55);
+}
+.card-panel {
+  width: 100%;
+  max-width: 400px;
+  background: rgba(255, 248, 236, 0.96);
+  border: 3px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 6px 0 var(--line);
+  padding: 20px 18px;
+  text-align: center;
+}
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: #9a5b22;
+}
+.logo {
+  margin: 4px 0 8px;
+  font-family: 'Yuji Syuku', serif;
+  font-size: min(52px, 13cqw);
+  line-height: 1.1;
+}
+.lead {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 0 0 8px;
+}
+.best {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #9a5b22;
+}
+.btn-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.row-links {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+.howto {
+  text-align: left;
+}
+.howto h2 {
+  margin: 0 0 6px;
+  text-align: center;
+}
+.howto h3 {
+  margin: 10px 0 2px;
+  font-size: 14px;
+}
+.howto p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.howto .btn {
+  margin-top: 14px;
+}
+
+/* 結果: ランクごとのグラデーション */
+.rank-card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  padding: 24px 18px 18px;
+  border-radius: 22px;
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  color: #fff;
+  text-align: center;
+  overflow: hidden;
+  animation: card-in 0.5s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+@keyframes card-in {
+  from {
+    transform: scale(0.6) rotate(-4deg);
+    opacity: 0;
+  }
+}
+.rank-card.ur {
+  background-size: 300% 300% !important;
+  animation: card-in 0.5s cubic-bezier(0.2, 1.4, 0.4, 1), rainbow 3s linear infinite;
+}
+@keyframes rainbow {
+  to {
+    background-position: 300% 0;
+  }
+}
+.rank-shine {
+  position: absolute;
+  inset: -40%;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.45) 50%, transparent 60%);
+  animation: shine 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes shine {
+  from {
+    transform: translateX(-60%);
+  }
+  to {
+    transform: translateX(60%);
+  }
+}
+.rank-id {
+  position: relative;
+  font-size: 64px;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
+}
+.rank-name {
+  position: relative;
+  margin-top: 4px;
+  font-family: 'Yuji Syuku', serif;
+  font-size: 32px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+.rank-comment {
+  position: relative;
+  margin: 8px 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+.rank-score {
+  position: relative;
+  font-size: 26px;
+  font-weight: 900;
+}
+.rank-score small {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  opacity: 0.9;
+}
+.rank-best {
+  position: relative;
+  margin: 4px 0 12px;
+  font-size: 11px;
+  font-weight: 800;
+  opacity: 0.85;
+}
+.rank-card .btn-col {
+  position: relative;
+}
+.rank-card .btn-ghost {
+  color: #fff;
+  border-color: #fff;
+}

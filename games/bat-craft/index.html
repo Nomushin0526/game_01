@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>バット職人</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800;900&family=Yuji+Syuku&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../shared/ui.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="app-body">
+    <div id="app" class="app">
+      <canvas id="gl"></canvas>
+      <canvas id="fx"></canvas>
+
+      <!-- 工程の表示 -->
+      <div id="hud" class="hud hidden">
+        <div class="hud-top">
+          <div><b id="step-name">① 荒削り</b><span id="step-tool">丸ノミ</span></div>
+        </div>
+        <div class="hud-bottom">
+          <p id="hint" class="hint"></p>
+          <button id="btn-next" class="btn btn-primary next" type="button">次の工程へ</button>
+        </div>
+      </div>
+      <div id="banner" class="banner"></div>
+
+      <!-- タイトル -->
+      <section id="screen-title" class="screen">
+        <div class="card-panel">
+          <p class="eyebrow">角材から一本を削り出せ</p>
+          <h1 class="logo">バット職人</h1>
+          <p class="lead">旋盤で回る角材を、ノミで削って、やすりで磨いて、ニスで仕上げる。<br />目指せ<b>究極のバット（UR）</b>。</p>
+          <p id="title-best" class="best"></p>
+          <div class="btn-col">
+            <button id="btn-start" class="btn btn-primary">作業開始</button>
+            <button id="btn-howto" class="btn btn-ghost">あそびかた</button>
+          </div>
+          <div class="row-links">
+            <a href="../index.html" class="link">← ゲーム一覧</a>
+            <button id="btn-sound" class="link" type="button">🔊 サウンド ON</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- あそびかた -->
+      <section id="screen-howto" class="screen hidden">
+        <div class="card-panel howto">
+          <h2>あそびかた</h2>
+          <h3>① 荒削り・② 仕上げ削り</h3>
+          <p>回っている角材の横を指でなぞると、ノミが当たって削れます。<b>指をバットに近づけるほど深く</b>削れます（刃は指より内側に出ます）。点線が理想のバットの形。削りすぎると赤くなり、元には戻せません。</p>
+          <h3>③ やすりがけ</h3>
+          <p>バットの上を指でこすると、表面がなめらかになります。速くこするほどよく削れます。</p>
+          <h3>④ ニス塗り</h3>
+          <p>こすって塗るとツヤが出ます。やすりがけが足りない所はツヤが出にくい。</p>
+          <h3>ランク</h3>
+          <p>形・なめらかさ・ツヤで採点。なし（ただの角材）→ N → R → SR → SSR → UR（究極のバット）。各工程は時間制。早く終わったら「次の工程へ」。</p>
+          <button class="btn btn-primary" data-close="howto">とじる</button>
+        </div>
+      </section>
+
+      <!-- 結果 -->
+      <section id="screen-result" class="screen dim hidden">
+        <div id="rank-card" class="rank-card">
+          <div class="rank-shine"></div>
+          <div id="rank-id" class="rank-id">R</div>
+          <div id="rank-name" class="rank-name">普通のバット</div>
+          <div id="rank-comment" class="rank-comment"></div>
+          <div id="rank-score" class="rank-score"></div>
+          <div id="rank-best" class="rank-best"></div>
+          <div class="btn-col">
+            <button id="btn-again" class="btn btn-primary">もう一本つくる</button>
+            <a href="../index.html" class="btn btn-ghost">ゲーム一覧へ</a>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="rotate-notice"><div class="icon">📱</div><p>スマホを縦向きにしてね</p></div>
+
+    <script src="../../shared/storage.js"></script>
+    <script src="../../shared/haptics.js"></script>
+    <script src="../../shared/audio.js"></script>
+    <script src="../../shared/vendor/three.min.js"></script>
+    <script src="bat.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>
