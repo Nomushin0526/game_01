@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>言霊デュエル</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800;900&family=Yuji+Syuku&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../shared/ui.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="app-body">
+    <div id="app" class="app">
+      <!-- 相手 -->
+      <div id="op-bar" class="bar op"><div class="who">相手</div><div id="op-bar-in" class="bar-in"></div></div>
+      <div id="op-traps" class="traps op"></div>
+      <div id="op-field" class="field op"></div>
+
+      <div id="log" class="log"></div>
+
+      <!-- 自分 -->
+      <div id="me-field" class="field me"></div>
+      <div id="me-traps" class="traps me"></div>
+      <div id="me-bar" class="bar me">
+        <div class="who">あなた</div>
+        <div id="me-bar-in" class="bar-in"></div>
+        <button id="btn-end" class="end-btn" type="button">ターン終了</button>
+      </div>
+      <div id="info" class="info"></div>
+      <div id="hand" class="hand"></div>
+
+      <div id="banner" class="banner"></div>
+      <div id="cutin" class="cutin hidden"></div>
+      <div id="trap-ask" class="trap-ask hidden"></div>
+
+      <!-- タイトル -->
+      <section id="screen-title" class="screen">
+        <div class="card-panel">
+          <p class="eyebrow">ことばで戦うカードゲーム</p>
+          <h1 class="logo">言霊<span>デュエル</span></h1>
+          <p class="lead">名詞に 助詞・動詞・助動詞 を重ねて文を作れ。<br />「りんご」より「りんごを食べちゃう」の方が強い。</p>
+          <p class="pick">デッキを選ぶ</p>
+          <div id="decks" class="decks"></div>
+          <div class="btn-col">
+            <button id="btn-start" class="btn btn-primary">デュエル開始</button>
+            <button id="btn-howto" class="btn btn-ghost">あそびかた</button>
+          </div>
+          <div class="row-links">
+            <a href="../index.html" class="link">← ゲーム一覧</a>
+            <button id="btn-sound" class="link" type="button">🔊 サウンド ON</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- あそびかた -->
+      <section id="screen-howto" class="screen hidden">
+        <div class="card-panel howto">
+          <h2>あそびかた</h2>
+          <h3>勝ち方</h3>
+          <p>相手のHP（160）を0にしたら勝ち。山札が引けなくなっても負け。</p>
+          <h3>自分のターンにできること</h3>
+          <p>
+            ① <b class="c-noun">名詞</b>を場に出す（<b>1ターン1枚</b>・場は3つまで）<br />
+            ② 場の名詞に <b class="c-part">助詞</b>→<b class="c-verb">動詞</b>→<b class="c-aux">助動詞</b> の順で重ねる（何枚でも）<br />
+            ③ <b class="c-trap">トラップ</b>を伏せる<br />
+            ④ 場の文を<b>発動</b>（1つの文は1ターン1回）<br />
+            終わったら「ターン終了」。先攻の最初のターンは攻撃できません。
+          </p>
+          <h3>文の強さ</h3>
+          <p>
+            「りんご」だけ → ♥10 回復<br />
+            「りんご<b class="c-verb">食べる</b>」 → 食べ物と食べるは相性◎で ×2.5<br />
+            「りんご<b class="c-part">を</b><b class="c-verb">食べる</b>」 → 正しい文法で さらに ×1.5（食べる・飲むは、合う物なら1枚ドローも）<br />
+            「りんごを食べ<b class="c-aux">ちゃう</b>」 → ×1.8（ただし自分も15ダメージ）<br />
+            助詞をまちがえると「文法ミス」で弱くなります。「石を食べる」のような変な文は歯が欠けます。
+          </p>
+          <h3>攻撃と守備</h3>
+          <p>相手の場に言葉があると、まずそれを攻撃しないといけません。攻撃が守備（名詞の強さ＋重ねた枚数×5）より大きければ破壊して、あまりは相手に貫通。届かないと差の分だけ自分が反動ダメージ。場が空なら直接攻撃。動詞のない言葉は1回発動すると消えます（言いっぱなし）。動詞を重ねると、食べる・投げるなど<b>使うとなくなる</b>文と、振り回す・かみつく・すすめるなど<b>場に残って毎ターン使える</b>文になります。</p>
+          <h3>トラップ</h3>
+          <p>
+            伏せておくと、相手の行動に反応して「発動する？」と聞いてきます。<br />
+            <b>言葉狩り</b>：相手の文の発動を無効にして破壊<br />
+            <b>る攻め</b>：相手が「る」で終わる動詞（食べる・投げる…）を出したら捨てさせて15ダメージ<br />
+            <b>揚げ足取り</b>：攻撃の半分をはね返す　<b>沈黙は金</b>：攻撃を0に<br />
+            <b>聞き間違い</b>：相手の動詞を別の動詞にすり替える<br />
+            助動詞「<b class="c-aux">ます</b>」を付けた丁寧な文は、トラップを受けません。
+          </p>
+          <button class="btn btn-primary" data-close="howto">とじる</button>
+        </div>
+      </section>
+
+      <!-- 結果 -->
+      <section id="screen-result" class="screen dim hidden">
+        <div class="card-panel">
+          <h2 id="result-head" class="result-head">勝ち！</h2>
+          <p id="result-sub" class="result-sub"></p>
+          <p id="result-rec" class="result-rec"></p>
+          <div class="btn-col">
+            <button id="btn-again" class="btn btn-primary">もう一戦</button>
+            <a href="../index.html" class="btn btn-ghost">ゲーム一覧へ</a>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="rotate-notice"><div class="icon">📱</div><p>スマホを縦向きにしてね</p></div>
+
+    <script src="../../shared/storage.js"></script>
+    <script src="../../shared/haptics.js"></script>
+    <script src="../../shared/audio.js"></script>
+    <script src="cards.js"></script>
+    <script src="ai.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>
