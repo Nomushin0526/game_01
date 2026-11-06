@@ -842,3 +842,39 @@
   white-space: nowrap;
   font-size: 15px;
 }
+
+/* ---------- 結果: 被害額（寿司打のようにシンプルに） ---------- */
+.result-rows {
+  text-align: center;
+  padding: 10px 12px 12px;
+}
+.dmg-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+.dmg-yen {
+  font-size: min(42px, 9cqw); /* 億単位でも1行に収まる大きさ */
+  white-space: nowrap;
+  font-weight: 900;
+  color: var(--primary-dark);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+.dmg-rank {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 12px;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--accent);
+  font-size: 14px;
+  font-weight: 900;
+}
+.dmg-line {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}

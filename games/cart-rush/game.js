@@ -724,6 +724,7 @@
       cleanLandings: 0,
       maxCombo: 0,
       lastCause: null,
+      damage: 0,
       rec: [],
       recT: 0,
       ghost: mode === 'normal' ? null : storage.get(ghostKey(st, !!settings.night), null),
@@ -789,6 +790,28 @@
     el.classList.add('show');
   }
 
+  // ---------- 被害額（ぶつかった・はね飛ばした物の弁償代） ----------
+  const PRICE = {
+    cone: 3000, wetsign: 2000, kanban: 8000, boxes: 4000, display: 30000, cart: 25000, banner: 10000, noren: 15000,
+    shopper: 10000, bike: 60000, cat: 500, barrier: 50000, bar: 30000,
+    car: 1800000, truck: 8000000, bus: 25000000,
+    tree: 300000, lamp: 400000, signal: 1200000, vend: 600000, mailbox: 150000, bench: 80000,
+  };
+  const CART_REPAIR = 3000; // 自分のカートの修理代（ぶつかるたび）
+  function addDamage(kind) {
+    G.damage = (G.damage || 0) + (PRICE[kind] || 5000);
+  }
+  // 被害額に応じたひと言
+  function damageRank(yen) {
+    if (yen <= 0) return '無事故！ご近所の鑑';
+    if (yen < 100000) return 'ちょっとやんちゃな主婦';
+    if (yen < 1000000) return '町内会で話題に';
+    if (yen < 10000000) return 'ローンを組みました';
+    if (yen < 50000000) return '夕方のニュースに出ました';
+    return '伝説の主婦';
+  }
+  const yen = (v) => '¥' + Math.round(v).toLocaleString();
+
   const CAUSE = {
     shopper: '買い物客', cart: '放置カート', display: '特売ワゴン', boxes: 'みかんの段ボール', car: '乗用車', truck: 'トラック',
     bus: '路線バス', bike: '自転車', barrier: '通行止め', bar: '工事のバー', noren: 'のれん', banner: '特売の幕', cat: '飛び出したネコ',
@@ -796,6 +819,8 @@
   function onHit(o) {
     const P = G.player;
     G.lastCause = o.name || CAUSE[o.kind] || '障害物';
+    G.damage = (G.damage || 0) + CART_REPAIR;
+    if (!G.obstacles.includes(o)) addDamage(o.kind); // 歩道の物など（その場に残る物）
     o.hit = true;
     o.kx = 0;
     // ぶつかった相手は大きくはね飛ばされて、少しして消える（歩道の物など動かせない物は除く）
@@ -997,6 +1022,7 @@
     o.change = null;
     o.blinkDir = 0;
     for (const r of G.ramps) if (r.attach === o) r.dead = true; // 後ろに付いていたジャンプ台も一緒に消す
+    addDamage(o.kind);
     const side = o.x >= P.x ? 1 : -1;
     const heavy = VEHICLES.has(o.kind);
     o.fvx = side * (3 + Math.random() * 5) * power;
@@ -1497,47 +1523,30 @@
     const rkey = st.id + (G.night ? '@night' : '');
     const rec = records[rkey] || (records[rkey] = {});
     let newRecord = false;
-    let rows = [];
     let headline = '';
     let sub = '';
+    let line = ''; // 被害額の下に出す小さな1行
+    const dmg = G.damage || 0;
 
     if (G.mode === 'normal') {
       if (clear) {
-        const timeBonus = Math.floor(G.timeLeft * 100);
-        const hpBonus = G.hp * 1000;
-        const total = Math.floor(G.score) + timeBonus + hpBonus;
-        rows = [
-          ['走行・技・ギリギリ', Math.floor(G.score).toLocaleString()],
-          [`残りタイム ${G.timeLeft.toFixed(1)}秒`, '+' + timeBonus.toLocaleString()],
-          [`残りHP ${G.hp}`, '+' + hpBonus.toLocaleString()],
-          ['合計スコア', total.toLocaleString(), 'total'],
-        ];
-        if (!rec.bestScore || total > rec.bestScore) {
-          rec.bestScore = total;
+        headline = 'STAGE CLEAR!';
+        sub = `${st.goalLabel}に到着！`;
+        line = `のこり時間 ${G.timeLeft.toFixed(1)}秒`;
+        // 記録は「クリアしたときの被害額の少なさ」
+        if (rec.bestDamage === undefined || dmg < rec.bestDamage) {
+          rec.bestDamage = dmg;
           newRecord = true;
         }
         rec.cleared = true;
-        headline = 'STAGE CLEAR!';
-        sub = `${st.goalLabel}に到着！`;
       } else {
-        const pct = Math.floor(clamp(G.player.z / st.length, 0, 1) * 100);
-        rows = [
-          ['進んだ距離', `${pct}%`],
-          ['ぶつかった回数', `${G.hits}回`],
-          ['スコア', Math.floor(G.score).toLocaleString(), 'total'],
-        ];
         headline = G.overReason === 'time' ? 'TIME UP' : 'GAME OVER';
         sub = G.overReason === 'time' ? '時間切れ！特売が終わっちゃった…' : `${G.lastCause || '障害物'}に激突。買い物どころじゃない…`;
+        line = `進んだ距離 ${Math.floor(clamp(G.player.z / st.length, 0, 1) * 100)}%`;
       }
-      if (rec.bestScore) rows.push(['ベストスコア', rec.bestScore.toLocaleString()]);
+      if (rec.bestDamage !== undefined) line += `　／　最少 ${yen(rec.bestDamage)}`;
     } else {
       const total = G.elapsed + G.penalty;
-      rows = [
-        ['走行タイム', formatTime(G.elapsed)],
-        [`ペナルティ（${G.hits}回）`, `+${G.penalty}秒`],
-      ];
-      G.laps.forEach((l, i) => rows.push([`CP${i + 1} 通過`, formatTime(l)]));
-      rows.push(['クリアタイム', formatTime(total), 'total']);
       if (!rec.bestTime || total < rec.bestTime) {
         rec.bestTime = total;
         newRecord = true;
@@ -1545,28 +1554,24 @@
         G.rec.push(Math.round(G.elapsed * 100), Math.round(G.player.x * 100), Math.round(G.player.y * 100), Math.round(G.player.z * 10));
         storage.set(ghostKey(st, G.night), { t: total, d: G.rec });
       }
-      rows.push(['ベストタイム', formatTime(rec.bestTime)]);
       rec.cleared = true;
       headline = 'FINISH!';
       sub = `${st.goalLabel}に到着！`;
+      line = `タイム ${formatTime(total)}　／　ベスト ${formatTime(rec.bestTime)}`;
     }
-    rows = [
-      ['ギリギリ回避', `${G.nearMisses}回`],
-      ['ジャンプ台', `${G.jumps}回（最大${G.maxChain}連続）`],
-      ['着地成功 / 最大コンボ', `${G.cleanLandings || 0}回 / ${G.maxCombo || 0}`],
-      ['はね飛ばした数', `${G.smashed}個`],
-      ['タイムセール', `${G.sales}回`],
-    ].concat(rows);
-    G.result = { clear, headline, sub, rows: rows.slice(), newRecord };
+    const rank = damageRank(dmg);
+    G.result = { clear, headline, sub, damage: dmg, rank, line, newRecord };
     storage.set(REC_KEY, records);
 
     $('result-head').textContent = headline;
     $('result-head').className = 'result-head ' + (clear ? 'clear' : 'fail');
     $('result-sub').textContent = sub;
     $('result-badge').classList.toggle('hidden', !newRecord);
-    $('result-rows').innerHTML = rows
-      .map((r) => `<div class="row ${r[2] || ''}"><span>${r[0]}</span><b>${r[1]}</b></div>`)
-      .join('');
+    $('result-rows').innerHTML = `
+      <div class="dmg-label">今回の被害額</div>
+      <div class="dmg-yen">${yen(dmg)}</div>
+      <div class="dmg-rank">${rank}</div>
+      <div class="dmg-line">${line}</div>`;
     const hasNext = clear && G.stageIdx < STAGES.length - 1;
     $('btn-next').classList.toggle('hidden', !hasNext);
     showScreen('result');
@@ -1628,17 +1633,19 @@
     g.font = font(800, 34);
     g.fillStyle = '#5c5f77';
     g.fillText(`${st.route || ''}  ${G.mode === 'normal' ? 'チェックポイントモード' : 'タイムアタック'}`, 48, ph + 145);
-    let y = ph + 220;
-    const rows = r.rows.filter((row) => row[2] === 'total').concat(r.rows.filter((row) => row[2] !== 'total').slice(0, 5));
-    rows.forEach((row, i) => {
-      g.font = font(i === 0 ? 900 : 700, i === 0 ? 50 : 36);
-      g.fillStyle = i === 0 ? '#d94b4b' : '#2b2d42';
-      g.textAlign = 'left';
-      g.fillText(row[0], 48, y);
-      g.textAlign = 'right';
-      g.fillText(String(row[1]), Wc - 48, y);
-      y += i === 0 ? 78 : 58;
-    });
+    g.textAlign = 'left';
+    g.fillStyle = '#5c5f77';
+    g.font = font(800, 40);
+    g.fillText('今回の被害額', 48, ph + 245);
+    g.fillStyle = '#d94b4b';
+    g.font = font(900, 120);
+    g.fillText(yen(r.damage), 48, ph + 375);
+    g.fillStyle = '#2b2d42';
+    g.font = font(900, 50);
+    g.fillText(r.rank, 48, ph + 460);
+    g.fillStyle = '#5c5f77';
+    g.font = font(700, 32);
+    g.fillText(r.line, 48, ph + 530);
     if (r.newRecord) {
       g.save();
       g.translate(Wc - 210, 150);
@@ -1672,7 +1679,7 @@
     if (!shareBlob) return;
     const file = new File([shareBlob], 'cart-rush.png', { type: 'image/png' });
     try {
-      await navigator.share({ files: [file], text: `カートラッシュ！ STAGE ${G.stage.no} ${G.result.headline}` });
+      await navigator.share({ files: [file], text: `カートラッシュ！ STAGE ${G.stage.no} 被害額 ${yen(G.result.damage)}「${G.result.rank}」` });
     } catch (e) {
       /* キャンセルなど */
     }
@@ -1690,8 +1697,8 @@
       const rec = records[st.id + (settings.night ? '@night' : '')] || {};
       const best =
         selectedMode === 'normal'
-          ? rec.bestScore
-            ? `ベスト ${rec.bestScore.toLocaleString()}点`
+          ? rec.bestDamage !== undefined
+            ? `最少被害額 ${yen(rec.bestDamage)}`
             : '記録なし'
           : rec.bestTime
           ? `ベスト ${formatTime(rec.bestTime)}${storage.get(ghostKey(st, settings.night), null) ? '　👻ゴーストと勝負' : ''}`
