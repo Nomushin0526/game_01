@@ -34,7 +34,6 @@
           <button id="btn-pause" class="icon-btn" aria-label="一時停止">❚❚</button>
         </div>
       </div>
-      </div>
       <button id="btn-sale" class="btn-sale hidden" type="button">タイム<br />セール！</button>
       <div id="zone-label" class="zone-label"></div>
       <div id="banner" class="banner"></div>
@@ -181,11 +180,13 @@
         <h2 id="result-head" class="result-head">STAGE CLEAR!</h2>
         <p id="result-sub" class="result-sub"></p>
         <div id="result-rows" class="result-rows"></div>
-        <div class="btn-col">
+        <div class="btn-col tight">
           <button id="btn-next" class="btn btn-primary hidden">次のステージへ</button>
-          <button id="btn-share" class="btn btn-accent">📷 結果を画像でシェア</button>
-          <button id="btn-retry" class="btn btn-secondary">もう一度</button>
-          <button id="btn-stages" class="btn btn-ghost">ステージ選択へ</button>
+          <div class="btn-row">
+            <button id="btn-retry" class="btn btn-secondary">もう一度</button>
+            <button id="btn-stages" class="btn">ステージ選択</button>
+          </div>
+          <button id="btn-share" class="btn btn-ghost btn-small">📷 結果を画像でシェア</button>
         </div>
       </div>
     </section>

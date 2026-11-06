@@ -196,6 +196,8 @@
   }
   function addRamp(x, z, th) {
     if (z < 40 || z > G.stage.length - 40) return;
+    // 後ろから走ってくる車が止まりきれない距離（約90m）まで見て、車がいれば置かない
+    if (laneBlocked(x, z - 90, z + JUMP.ramp.len + 15, null)) return;
     G.ramps.push(makeRamp(x, z));
     let cx = x;
     let cz = z + JUMP.ramp.len;
@@ -206,6 +208,8 @@
       const air = airTime(JUMP.launchVy + JUMP.chainVy * lv);
       cz += th.maxSpeed * JUMP.levels[lv] * 0.97 * air - JUMP.ramp.len * 0.65;
       cx = clamp(cx + (G.rng() < 0.5 ? -1 : 1) * (0.8 + G.rng() * 1.2), -th.limit + 0.5, th.limit - 0.5);
+      const zt = THEMES[zoneAt(G.stage, cz).type];
+      if (zt.lanes) cx = laneOf(cx, zt.lanes); // 車線のある道では車線の真ん中に置く
       if (cz > G.stage.length - 40) break;
       G.ramps.push(makeRamp(cx, cz));
       cz += JUMP.ramp.len;
@@ -217,7 +221,9 @@
   function updateLaneChange(o, P, dt) {
     const c = o.change;
     if (o.lcState === 'wait') {
-      if (o.z - P.z < c.dist) {
+      if (o.z - P.z < c.dist && laneBlocked(c.to, o.z - o.len - 12, o.z + o.len / 2 + 45, o)) {
+        o.lcState = 'done'; // 移る先に車やジャンプ台があるならやめる
+      } else if (o.z - P.z < c.dist) {
         o.lcState = c.signal > 0 ? 'signal' : 'move';
         o.lcTimer = c.signal;
         o.lcFrom = o.x;
@@ -237,6 +243,7 @@
       if (k >= 1) {
         o.lcState = 'done';
         o.blinkDir = 0;
+        o.avoiding = false;
       }
     }
   }
@@ -263,6 +270,92 @@
     }
     return o;
   }
+  // ---------- 車どうし・ジャンプ台と重ならないように ----------
+  // 前にジャンプ台や遅い車があったら、隣の車線へよける（ステージ2はウィンカーを出してから、3は急に）。
+  // よけられないときは、前の物の後ろについて速度を合わせる。
+  const laneOf = (x, lanes) => lanes.reduce((b, l) => (Math.abs(l - x) < Math.abs(b - x) ? l : b), lanes[0]);
+  function rearOf(b) {
+    // 後ろ側の端（車ならその後ろに付いたジャンプ台も含める）
+    if (b.kind === 'ramp') return b.z0;
+    const att = G.ramps.find((r) => r.attach === b);
+    return att ? att.z0 : b.z - b.len / 2;
+  }
+  function laneBlocked(x, zFrom, zTo, self) {
+    for (const b of G.obstacles) {
+      if (b === self || b.flying || !VEHICLES.has(b.kind)) continue;
+      if (Math.abs(b.x - x) < 1.6 && b.z + b.len / 2 > zFrom && rearOf(b) < zTo) return true;
+    }
+    for (const r of G.ramps) {
+      if (r.attach) continue;
+      if (Math.abs(r.x - x) < r.w + 1.0 && r.z1 > zFrom && r.z0 < zTo) return true;
+    }
+    return false;
+  }
+  function avoidTraffic(o, dt) {
+    const front = o.z + o.len / 2;
+    const changing = o.lcState === 'signal' || o.lcState === 'move';
+    let blocker = null;
+    let gap = Infinity;
+    for (const b of G.obstacles) {
+      if (b === o || b.flying || !VEHICLES.has(b.kind) || Math.abs(b.x - o.x) > 1.6) continue;
+      if (b.z < o.z) continue;
+      const g = rearOf(b) - front;
+      // 前の車が同じか速くても、すぐ前にいる間は「前の物」として扱う（追いついて重ならないように）
+      if (b.vz >= o.vz && g > 15) continue;
+      if (g > -o.len && g < gap) {
+        gap = g;
+        blocker = b;
+      }
+    }
+    for (const r of G.ramps) {
+      if (r.attach || Math.abs(r.x - o.x) > r.w + 1.0) continue;
+      const g = r.z0 - front;
+      if (g > -r.len && g < gap) {
+        gap = g;
+        blocker = r;
+      }
+    }
+    if (!blocker) {
+      if (o.followVz !== undefined && o.vz < o.baseVz) o.vz = Math.min(o.baseVz, o.vz + 15 * dt);
+      return;
+    }
+    if (changing) {
+      // 車線変更中でも、前が近ければブレーキ
+      if (gap < 15) {
+        if (o.baseVz === undefined) o.baseVz = o.vz;
+        o.followVz = true;
+        o.vz = Math.max(blocker.vz || 0, o.vz - 120 * dt);
+      }
+      return;
+    }
+    const lookAhead = 6 + (o.vz - (blocker.vz || 0)) * 1.4;
+    if (gap > lookAhead) return;
+    const th = THEMES[zoneAt(G.stage, o.z).type];
+    if (th.lanes && !o.avoiding) {
+      const cur = th.lanes.indexOf(laneOf(o.x, th.lanes));
+      const opts = [cur - 1, cur + 1].filter((i) => i >= 0 && i < th.lanes.length).sort(() => G.rng() - 0.5);
+      for (const i of opts) {
+        const to = th.lanes[i];
+        if (!laneBlocked(to, o.z - o.len - 12, front + 20 + o.vz * 1.0, o)) {
+          const blink = !G.stage.laneChange || G.stage.laneChange.blinker;
+          o.change = { to, dist: Infinity, blinker: blink, signal: blink ? 0.6 : 0, moveTime: blink ? 0.8 : 0.6 };
+          o.lcState = blink ? 'signal' : 'move';
+          o.lcTimer = o.change.signal;
+          o.lcFrom = o.x;
+          o.blinkDir = blink ? Math.sign(to - o.x) : 0;
+          o.avoiding = true;
+          return;
+        }
+      }
+    }
+    // よけられない: 前の物の速さに合わせて後ろにつく（ジャンプ台なら手前で止まる）
+    if (o.baseVz === undefined) o.baseVz = o.vz;
+    o.followVz = true;
+    const target = blocker.vz || 0;
+    o.vz = Math.max(target, o.vz - 40 * dt);
+    if (gap < 3) o.vz = Math.min(o.vz, target); // 少し手前で止まる（重ならない）
+  }
+
   function syncAttachedRamp(r) {
     const a = r.attach;
     r.prevZ0 = r.z0;
@@ -931,6 +1024,7 @@
 
     // 障害物の移動
     for (const o of G.obstacles) {
+      if (VEHICLES.has(o.kind) && !o.hit && !o.flying && o.vz) avoidTraffic(o, dt);
       if (o.vz) o.z += o.vz * dt;
       if (o.change && !o.hit) updateLaneChange(o, P, dt);
       if (o.trigger && !o.active && P.z > o.z - o.trigger) o.active = true;
@@ -1121,7 +1215,7 @@
         const hpBonus = G.hp * 1000;
         const total = Math.floor(G.score) + timeBonus + hpBonus;
         rows = [
-          ['走行・アイテム・ギリギリ', Math.floor(G.score).toLocaleString()],
+          ['走行・技・ギリギリ', Math.floor(G.score).toLocaleString()],
           [`残りタイム ${G.timeLeft.toFixed(1)}秒`, '+' + timeBonus.toLocaleString()],
           [`残りHP ${G.hp}`, '+' + hpBonus.toLocaleString()],
           ['合計スコア', total.toLocaleString(), 'total'],
@@ -1313,7 +1407,7 @@
         <div class="stage-info">
           <h3>${st.name}${rec.cleared ? ' <em class="tag">クリア</em>' : ''}</h3>
           <p class="stars">難しさ ${'★'.repeat(st.level)}${'☆'.repeat(3 - st.level)}${st.route ? `<span class="route">${st.route}</span>` : ''}</p>
-          <p>${st.desc}</p>
+          <p class="desc">${st.desc}</p>
           <p class="best">${best}</p>
         </div>`;
       btn.addEventListener('click', () => {

@@ -729,3 +729,116 @@
   border-radius: 12px;
   background: #fff;
 }
+
+/* ---------- 小さい画面でもスクロールせずに収まるように（ステージ選択・結果） ---------- */
+#screen-stage .menu-panel,
+#screen-result .menu-panel {
+  padding: 14px 14px 16px;
+}
+#screen-stage .screen-title {
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+.time-seg {
+  margin: 0 auto 10px;
+}
+.time-seg button {
+  min-height: 36px;
+}
+.stage-list {
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.stage-card {
+  min-height: 0;
+}
+.stage-thumb {
+  flex-basis: 58px;
+  padding: 5px;
+}
+.stage-thumb span {
+  font-size: 10px;
+  padding: 1px 6px;
+}
+.stage-info {
+  padding: 7px 10px;
+}
+.stage-info h3 {
+  font-size: 16px;
+  margin: 0 0 2px;
+}
+.stage-info .desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11px;
+}
+.stage-info .best {
+  margin-top: 2px;
+  font-size: 12px;
+}
+#screen-stage .btn,
+#screen-result .btn {
+  min-height: 46px;
+  font-size: 16px;
+  padding: 8px 12px;
+}
+.badge {
+  font-size: 13px;
+  padding: 1px 12px;
+}
+.result-head {
+  font-size: min(30px, 9cqw);
+  margin: 2px 0 0;
+}
+.result-sub {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+.result-rows {
+  padding: 2px 12px;
+  margin-bottom: 10px;
+}
+.result-rows .row {
+  padding: 3px 0;
+  font-size: 12.5px;
+}
+.result-rows .row.total {
+  font-size: 16px;
+}
+.btn-col.tight {
+  gap: 8px;
+}
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+.btn-row .btn {
+  flex: 1;
+}
+#screen-result .btn-small {
+  min-height: 38px;
+  font-size: 13px;
+}
+@media (max-height: 640px) {
+  #screen-stage,
+  #screen-result {
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  .stage-info .desc {
+    display: none;
+  }
+  .result-rows .row {
+    padding: 2px 0;
+    font-size: 12px;
+  }
+  .result-head {
+    font-size: 26px;
+  }
+}
+.btn-row .btn {
+  white-space: nowrap;
+  font-size: 15px;
+}
