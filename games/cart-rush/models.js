@@ -505,24 +505,35 @@
     const g = new T.Group();
     parent.add(g);
     const frame = '#7d8b98';
-    // カゴ（金網の絵を貼った半透明の箱）＋ フチ
-    box(g, 0.84, 0.56, 0.95, 0, 0.72, -0.98, wireMat).renderOrder = 2;
-    box(g, 0.86, 0.04, 0.04, 0, 1.0, -0.5, frame);
-    box(g, 0.86, 0.04, 0.04, 0, 1.0, -1.46, frame);
-    box(g, 0.04, 0.04, 0.98, -0.43, 1.0, -0.98, frame);
-    box(g, 0.04, 0.04, 0.98, 0.43, 1.0, -0.98, frame);
+    // カゴ本体（へこませられるよう、中心を軸にしたグループにまとめる）
+    const body = new T.Group();
+    body.position.set(0, 0.72, -0.98);
+    g.add(body);
+    box(body, 0.84, 0.56, 0.95, 0, 0, 0, wireMat).renderOrder = 2;
+    box(body, 0.86, 0.04, 0.04, 0, 0.28, 0.48, frame);
+    box(body, 0.86, 0.04, 0.04, 0, 0.28, -0.48, frame);
+    box(body, 0.04, 0.04, 0.98, -0.43, 0.28, 0, frame);
+    box(body, 0.04, 0.04, 0.98, 0.43, 0.28, 0, frame);
     // 下の台と脚・車輪
     box(g, 0.7, 0.03, 0.8, 0, 0.2, -0.98, frame);
+    const wheels = [];
     for (const [x, z] of [[-0.36, -0.58], [0.36, -0.58], [-0.36, -1.38], [0.36, -1.38]]) {
-      limb(g, new T.Vector3(x, 0.44, z), new T.Vector3(x * 0.9, 0.1, z), 0.018, frame);
-      const w = cyl(g, 0.07, 0.05, x * 0.9, 0.07, z, '#2e3338');
+      const leg = new T.Group();
+      g.add(leg);
+      limb(leg, new T.Vector3(x, 0.44, z), new T.Vector3(x * 0.9, 0.1, z), 0.018, frame);
+      const w = cyl(leg, 0.07, 0.05, x * 0.9, 0.07, z, '#2e3338');
       w.rotation.z = Math.PI / 2;
+      wheels.push(leg);
     }
-    // 取っ手（赤）
-    const hd = cyl(g, 0.032, 1.0, 0, 1.06, -0.44, '#e94f4f');
+    // 取っ手（赤）。曲げられるよう、付け根を軸にしたグループ
+    const handle = new T.Group();
+    handle.position.set(0, 1.0, -0.5);
+    g.add(handle);
+    const hd = cyl(handle, 0.032, 1.0, 0, 0.06, 0.06, '#e94f4f');
     hd.rotation.z = Math.PI / 2;
-    limb(g, new T.Vector3(-0.42, 1.0, -0.5), new T.Vector3(-0.44, 1.06, -0.44), 0.02, frame);
-    limb(g, new T.Vector3(0.42, 1.0, -0.5), new T.Vector3(0.44, 1.06, -0.44), 0.02, frame);
+    limb(handle, new T.Vector3(-0.42, 0, 0), new T.Vector3(-0.44, 0.06, 0.06), 0.02, frame);
+    limb(handle, new T.Vector3(0.42, 0, 0), new T.Vector3(0.44, 0.06, 0.06), 0.02, frame);
+    g.userData.parts = { body, wheels, handle, goods: [] };
     if (withGoods) {
       const goods = new T.Group();
       g.add(goods);
@@ -537,8 +548,36 @@
       ball(gg, 0.1, -0.1, 1.02, -0.68, '#e74c3c');
       ball(gg, 0.1, 0.12, 1.0, -1.32, '#ff9f43');
       box(gg, 0.3, 0.12, 0.22, -0.16, 0.92, -1.3, '#f2c94c');
+      g.userData.parts.goods = goods.children.slice();
     }
     return g;
+  }
+
+  // ぶつかるたびにカートが壊れていく（0: 新品 〜 3: ボロボロ）
+  //   カゴがゆがむ → 車輪が外れる → 取っ手が曲がる → 中の食材が落ちる
+  const DAMAGE = [
+    { rot: [0, 0, 0], scale: [1, 1, 1], handle: [0, 0, 0], lost: [], goods: 8 },
+    { rot: [0.1, 0.05, 0.22], scale: [1.06, 0.85, 1], handle: [0.2, 0, 0.3], lost: [1], goods: 5 },
+    { rot: [0.25, 0.15, -0.38], scale: [0.86, 0.68, 1.1], handle: [0.45, 0.1, -0.55], lost: [1, 2], goods: 2 },
+    { rot: [0.42, -0.25, 0.55], scale: [0.76, 0.52, 1.16], handle: [0.8, 0.3, 0.9], lost: [0, 1, 2], goods: 0 },
+  ];
+  function setCartDamage(cart, level) {
+    const p = cart.userData.parts;
+    const d = DAMAGE[Math.max(0, Math.min(DAMAGE.length - 1, level))];
+    p.body.rotation.set(d.rot[0], d.rot[1], d.rot[2]);
+    p.body.scale.set(d.scale[0], d.scale[1], d.scale[2]);
+    p.handle.rotation.set(d.handle[0], d.handle[1], d.handle[2]);
+    p.wheels.forEach((w, i) => (w.visible = !d.lost.includes(i)));
+    p.goods.forEach((m, i) => (m.visible = i < d.goods));
+    p.base = d.rot;
+    p.level = level;
+  }
+  // 壊れているほど、走りながらカゴがガタガタ揺れる
+  function shakeCart(cart, t) {
+    const p = cart.userData.parts;
+    if (!p.base || !p.level) return;
+    const a = 0.035 * p.level;
+    p.body.rotation.set(p.base[0] + Math.sin(t * 31) * a, p.base[1], p.base[2] + Math.sin(t * 23 + 1) * a);
   }
 
   function buildPlayer() {
@@ -608,7 +647,7 @@
     ball(head, 0.022, 0.07, 0.0, -0.205, '#2b2d42');
 
     root.add(shadow);
-    return { root, flip, rig, body, legs, shadow, head, goods: cart.userData.goods };
+    return { root, flip, rig, body, legs, shadow, head, goods: cart.userData.goods, cart };
   }
 
   // ---------- 人（買い物客・店員） ----------
@@ -1078,6 +1117,8 @@
     buildBus,
     buildKanban,
     buildBar,
+    setCartDamage,
+    shakeCart,
     setWarn,
     buildNoren,
     setBlink,

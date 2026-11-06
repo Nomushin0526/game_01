@@ -77,6 +77,9 @@
     clean() {
       [1047, 1319, 1568, 2093].forEach((f, i) => audio.tone(f, 0.09, { type: 'square', vol: 0.08, delay: i * 0.045 }));
     },
+    pop() {
+      audio.tone(900, 0.08, { type: 'sine', to: 1600, vol: 0.06 });
+    },
     curb() {
       audio.noise(0.08, { vol: 0.22, cutoff: 500 });
       audio.tone(120, 0.08, { type: 'square', vol: 0.08 });
@@ -449,13 +452,15 @@
     return addOb(kind, x, z);
   }
   // 道幅いっぱいの関門（ジャンプかスライディングで越える）
+  // 関門（ジャンプかスライディングで越える物）。道幅いっぱいにはせず、必ずどこか1車線は空けておく
   function placeGate(zone, th, z) {
-    if (zone.type === 'market') {
-      for (const x of [-1.55, 1.55]) addOb('banner', x, z);
-    } else if (zone.type === 'shotengai') {
-      for (const x of [-1.5, 1.5]) addOb('noren', x, z);
-    } else {
-      for (const x of th.lanes) addOb('bar', x, z);
+    const side = G.rng() < 0.5 ? -1 : 1;
+    if (zone.type === 'market') addOb('banner', side * 1.55, z);
+    else if (zone.type === 'shotengai') addOb('noren', side * 1.5, z);
+    else {
+      const open = Math.floor(G.rng() * th.lanes.length);
+      const others = th.lanes.filter((_, i) => i !== open);
+      for (const x of G.rng() < 0.5 ? others : [others[0]]) addOb('bar', x, z);
     }
   }
 
@@ -792,7 +797,9 @@
     const P = G.player;
     G.lastCause = o.name || CAUSE[o.kind] || '障害物';
     o.hit = true;
-    o.kx = (o.x >= P.x ? 1 : -1) * (o.vz ? 0 : 2.5);
+    o.kx = 0;
+    // ぶつかった相手は大きくはね飛ばされて、少しして消える（歩道の物など動かせない物は除く）
+    if (G.obstacles.includes(o)) blast(o, 1.4);
     G.hits++;
     G.invuln = 1.6;
     G.shake = 0.35;
@@ -810,6 +817,7 @@
     haptics.vibrate(120);
     flash();
     burst(['#ffd166', '#ffffff', '#ff6b6b'], 14);
+    burst(['#7d8b98', '#c3ced8', '#2e3338', '#e94f4f'], 16); // カートの部品が飛び散る
     if (G.mode === 'normal') {
       G.hp--;
       renderHearts();
@@ -979,26 +987,34 @@
   }
 
   // 物をはね飛ばす（軽い物、またはタイムセール中は何でも）
-  function smash(o) {
+  // はね飛ばす動き（回転しながら前と横へ飛び、0.9秒ほどでポンと消える）
+  function blast(o, power) {
     const P = G.player;
+    power = power || 1;
     o.hit = true;
     o.flying = true;
     o.vz = 0;
     o.change = null;
     o.blinkDir = 0;
+    for (const r of G.ramps) if (r.attach === o) r.dead = true; // 後ろに付いていたジャンプ台も一緒に消す
     const side = o.x >= P.x ? 1 : -1;
     const heavy = VEHICLES.has(o.kind);
-    o.fvx = side * (3 + Math.random() * 5);
-    o.fvy = (heavy ? 7 : 9) + Math.random() * 6;
-    o.fvz = P.speed * (heavy ? 0.5 : 0.75);
+    o.fvx = side * (3 + Math.random() * 5) * power;
+    o.fvy = ((heavy ? 7 : 9) + Math.random() * 6) * power;
+    o.fvz = Math.max(P.speed, 30) * (heavy ? 0.5 : 0.75) * (0.8 + power * 0.2);
     o.fy = 0;
     o.flyT = 0;
     o.rx = 0;
     o.ry = 0;
     o.rz = 0;
-    o.srx = (Math.random() - 0.5) * 14;
-    o.sry = (Math.random() - 0.5) * 10;
-    o.srz = side * (4 + Math.random() * 8);
+    o.srx = (Math.random() - 0.5) * 14 * power;
+    o.sry = (Math.random() - 0.5) * 10 * power;
+    o.srz = side * (4 + Math.random() * 8) * power;
+  }
+  function smash(o) {
+    const P = G.player;
+    blast(o, 1);
+    const heavy = VEHICLES.has(o.kind);
     G.smashed++;
     bumpCombo();
     G.score += Math.round((heavy ? 150 : 40) * (1 + 0.1 * Math.min(G.combo, 10)));
@@ -1269,7 +1285,16 @@
         o.kx *= Math.pow(0.05, dt);
       }
     }
-    G.obstacles = G.obstacles.filter((o) => o.z + o.len > P.z - CAM_BACK - 2 && Math.abs(o.x) < 30 && !(o.flying && (o.flyT > 2.5 || o.fy < -8)));
+    // 飛ばされた物は 0.9 秒でポンと消える（煙のような粒を出す）
+    for (const o of G.obstacles) {
+      if (o.flying && o.flyT > 0.9 && !o.vanished) {
+        o.vanished = true;
+        const sp = Render.worldScreen(o.x, o.fy + 1, o.z);
+        if (sp && sp.z < 1) puff(sp.x, sp.y, VEHICLES.has(o.kind) ? 18 : 10);
+      }
+    }
+    G.obstacles = G.obstacles.filter((o) => o.z + o.len > P.z - CAM_BACK - 2 && Math.abs(o.x) < 30 && !o.vanished);
+    G.ramps = G.ramps.filter((r) => !r.dead);
     if (P.onObj && !G.obstacles.includes(P.onObj)) P.onObj = null;
     G.ramps = G.ramps.filter((r) => (r.z1 > P.z - CAM_BACK - 2 || r === P.onRamp) && !(r.attach && (r.attach.flying || !G.obstacles.includes(r.attach))));
     if (P.onRamp && !G.ramps.includes(P.onRamp)) P.onRamp = null;
@@ -1376,6 +1401,12 @@
       if (G.endTimer <= 0) showResult(G.state === 'goal');
     }
 
+    // ボロボロのカートは煙を引く
+    const dmg = G.mode === 'normal' ? MAX_HP - G.hp : Math.min(3, G.hits || 0);
+    if (G.state === 'run' && dmg >= 2 && Math.random() < dt * 14) {
+      const sp = Render.worldScreen(P.x + (Math.random() - 0.5) * 0.6, P.y + 0.9, P.z + 1.0);
+      if (sp) G.particles.push({ x: sp.x, y: sp.y, vx: (Math.random() - 0.5) * 30, vy: -40 - Math.random() * 40, life: 0.6, size: 7 + Math.random() * 6, color: dmg >= 3 ? '#555a66' : '#9aa0aa', rot: 0 });
+    }
     G.invuln = Math.max(0, G.invuln - dt);
     G.punch = Math.max(0, (G.punch || 0) - dt * 2.5);
     G.dip = Math.max(0, (G.dip || 0) - dt * 4);
@@ -1406,6 +1437,14 @@
         rot: Math.random() * 6,
       });
     }
+  }
+  function puff(x, y, n) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const v = 60 + Math.random() * 160;
+      G.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, life: 0.5 + Math.random() * 0.3, size: 8 + Math.random() * 10, color: i % 3 ? '#ffffff' : '#ffe9a8', rot: Math.random() * 6 });
+    }
+    sfx.pop();
   }
   function floater(text, color) {
     const p = Render.playerScreen(G.player);

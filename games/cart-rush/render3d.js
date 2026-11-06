@@ -817,6 +817,13 @@
     const P = G.player;
     const p = player;
     p.root.position.set(P.x, P.y, -P.z);
+    // ぶつかった回数だけカートが壊れている（チェックポイントでHPが戻ると少し直る）
+    const dmg = G.mode === 'normal' ? 3 - (G.hp === undefined ? 3 : G.hp) : Math.min(3, G.hits || 0);
+    if (p.dmg !== dmg) {
+      p.dmg = dmg;
+      Mo.setCartDamage(p.cart, G.state === 'menu' ? 0 : dmg);
+    }
+    if (P.speed > 5) Mo.shakeCart(p.cart, t);
     // 着地でつぶれる（スクワッシュ）
     const sq = P.squash || 0;
     p.rig.scale.set(1 + sq * 0.18, 1 - sq * 0.28, 1 + sq * 0.1);
@@ -972,6 +979,9 @@
     ctx.stroke();
   }
 
+  function worldScreen(x, y, z) {
+    return toScreen(x, y, z);
+  }
   function playerScreen(P) {
     return toScreen(P.x, 1.0 + P.y, P.z);
   }
@@ -989,6 +999,7 @@
     drawWorld,
     drawOverlay,
     playerScreen,
+    worldScreen,
     zoneAt,
     view: R,
     fixturesIn,
