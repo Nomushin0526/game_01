@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>成り上がれ！歩兵</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800;900&family=Yuji+Syuku&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../shared/ui.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="app-body">
+    <div id="app" class="app">
+      <!-- 相手 -->
+      <div class="bar bar-op">
+        <div class="who">相手</div>
+        <div class="stats" id="op-stats"></div>
+      </div>
+
+      <!-- 盤 -->
+      <div class="board-wrap">
+        <div id="board" class="board" aria-label="将棋盤"></div>
+      </div>
+
+      <!-- 自分 -->
+      <div class="bar bar-me">
+        <div class="who">あなた</div>
+        <div class="stats" id="me-stats"></div>
+        <button id="btn-hand" class="hand-btn" type="button">持ち歩 <b id="hand-n">0</b></button>
+      </div>
+      <div id="log" class="log"></div>
+
+      <!-- 下のパネル -->
+      <div class="panel-tabs" role="tablist">
+        <button class="tab on" data-tab="shop" type="button">ショップ</button>
+        <button class="tab" data-tab="market" type="button">金銀相場</button>
+        <button class="tab" data-tab="forge" type="button">強化・合成</button>
+      </div>
+      <div class="panel">
+        <section id="tab-shop" class="tab-body"></section>
+        <section id="tab-market" class="tab-body hidden"></section>
+        <section id="tab-forge" class="tab-body hidden"></section>
+      </div>
+
+      <!-- タイトル -->
+      <section id="screen-title" class="screen">
+        <div class="card-panel">
+          <p class="eyebrow">将棋 × 経済 × 合成</p>
+          <h1 class="logo">成り上がれ！<span>歩兵</span></h1>
+          <p class="lead">盤にいるのは王と歩だけ。<br />お金とほかの駒をつぎ込んで、<b>最強の歩</b>を育てて王を詰ませよう。</p>
+          <div class="btn-col">
+            <button id="btn-start" class="btn btn-primary">対局をはじめる</button>
+            <button id="btn-howto" class="btn btn-ghost">あそびかた</button>
+          </div>
+          <div class="row-links">
+            <a href="../index.html" class="link">← ゲーム一覧</a>
+            <button id="btn-sound" class="link" type="button">🔊 サウンド ON</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- あそびかた -->
+      <section id="screen-howto" class="screen hidden">
+        <div class="card-panel howto">
+          <h2>あそびかた</h2>
+          <h3>勝ち方</h3>
+          <p>相手の王を<b>詰ませたら勝ち</b>。自分の王が取られる手は指せません。</p>
+          <h3>1手番でできること</h3>
+          <p>ショップ・相場・強化・合成は<b>何回でも</b>（相場の売買は1手番3回まで）。最後に<b>駒を1つ動かすか、持ち歩を打つ</b>と手番が終わります。手番のはじめに <b>¥10</b> もらえます。</p>
+          <h3>歩の強くし方は2つ</h3>
+          <p><b>① お金で強化</b>：ショップで「脚力アップ」「横歩き」「後ずさり」「鉄の鎧」を買って歩に付ける。<br /><b>② 駒を合成</b>：飛車・角・香車・桂馬・金・銀を歩に合成すると、その駒の動きが歩に加わる（1枚に3つまで・手数料 ¥10）。</p>
+          <h3>駒の手に入れ方</h3>
+          <p>ショップで買う（買うたびに品ぞろえが変わる）か、相手の強い歩を取って<b>合成されていた駒を1つ奪う</b>。取った歩は持ち歩になります。</p>
+          <h3>金銀相場（敵味方で共通）</h3>
+          <p>金と銀は相場で売買できます。値段は手番ごとに動き、<b>誰かが買うと上がり、売ると下がる</b>。相手が金銀を抱えているときに売り浴びせて値を崩す、なんて駆け引きも。売買には手数料がかかります。</p>
+          <h3>そのほか</h3>
+          <p>歩が敵陣（奥の3段）に入ると「と」に成って、金の動きが加わります。鎧を着た歩は、取られそうになっても1回だけ耐えます。</p>
+          <button class="btn btn-primary" data-close="howto">とじる</button>
+        </div>
+      </section>
+
+      <!-- 結果 -->
+      <section id="screen-result" class="screen dim hidden">
+        <div class="card-panel">
+          <h2 id="result-head" class="result-head">勝ち！</h2>
+          <p id="result-sub" class="result-sub"></p>
+          <div class="btn-col">
+            <button id="btn-again" class="btn btn-primary">もう一局</button>
+            <a href="../index.html" class="btn btn-ghost">ゲーム一覧へ</a>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="rotate-notice"><div class="icon">📱</div><p>スマホを縦向きにしてね</p></div>
+
+    <script src="../../shared/storage.js"></script>
+    <script src="../../shared/haptics.js"></script>
+    <script src="../../shared/audio.js"></script>
+    <script src="rules.js"></script>
+    <script src="economy.js"></script>
+    <script src="ai.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>

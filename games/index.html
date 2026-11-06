@@ -97,6 +97,25 @@
         font-size: 56px;
         z-index: 1;
       }
+      .thumb-fu {
+        background:
+          repeating-linear-gradient(90deg, transparent 0 29px, rgba(90, 59, 28, 0.5) 29px 30px),
+          repeating-linear-gradient(transparent 0 29px, rgba(90, 59, 28, 0.5) 29px 30px),
+          #e8c27f;
+        display: grid;
+        place-items: center;
+      }
+      .thumb-fu span {
+        width: 70px;
+        height: 76px;
+        display: grid;
+        place-items: center;
+        clip-path: polygon(50% 0, 88% 18%, 100% 100%, 0 100%, 12% 18%);
+        background: linear-gradient(#ffe8a8, #f2b84b);
+        font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+        font-size: 40px;
+        color: #2a1a0e;
+      }
       .thumb-soon {
         background: repeating-linear-gradient(45deg, #f3eee2 0 14px, #ebe4d4 14px 28px);
         display: grid;
@@ -138,6 +157,15 @@
             <span class="tag">3Dランゲーム</span>
             <h2>カートラッシュ！</h2>
             <p>ショッピングカートでスーパーから家まで大爆走。お客さんも車もかわしてゴールを目指せ！</p>
+          </div>
+        </a>
+
+        <a class="card" href="fu-rising/index.html">
+          <div class="thumb thumb-fu"><span aria-hidden="true">歩</span></div>
+          <div class="body">
+            <span class="tag">将棋×経済</span>
+            <h2>成り上がれ！歩兵</h2>
+            <p>盤には王と歩だけ。お金と合成で最強の歩を育て、金銀相場で相手を揺さぶって王を詰ませろ。</p>
           </div>
         </a>
 
