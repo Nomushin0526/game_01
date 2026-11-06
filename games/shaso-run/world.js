@@ -478,34 +478,99 @@
     // 車線の白い破線（自分の車線とのあいだ）
     const dashM = mat({ color: '#e9e9e6' });
     for (let x = X0; x > X1; x -= 10) box(5, 0.02, 0.15, dashM, x, 0.01, -1.9, true);
-    // 路肩の白線（走れる）
+    // ---------- 切れ目（交差点・川）: ここでは白線も歩道もなくなる ----------
+    // stage.gaps: [{ d: 進んだ距離, w: 幅, kind: 'cross' | 'river', name }]
+    const g_end = (g) => g.x1 + 1;
+    const gaps = (stage.gaps || []).map((g) => ({ x0: -g.d - g.w, x1: -g.d, kind: g.kind, name: g.name }));
+    const inGap = (xa, xb) => gaps.some((g) => xb > g.x0 - 0.5 && xa < g.x1 + 0.5);
+    // [xa, xb] から切れ目を除いた区間
+    function clip(xa, xb) {
+      let segs = [[xa, xb]];
+      for (const g of gaps) {
+        const out = [];
+        for (const [a2, b2] of segs) {
+          if (b2 <= g.x0 || a2 >= g.x1) out.push([a2, b2]);
+          else {
+            if (a2 < g.x0) out.push([a2, g.x0]);
+            if (b2 > g.x1) out.push([g.x1, b2]);
+          }
+        }
+        segs = out;
+      }
+      return segs.filter(([a2, b2]) => b2 - a2 > 1);
+    }
     const lineM = mat({ color: '#f3f3ef' });
-    const line = new T.Mesh(new T.PlaneGeometry(span, 0.2), lineM);
-    line.rotation.x = -Math.PI / 2;
-    line.position.set(mid, 0.012, -Z.line);
-    scene.add(line);
-    platforms.push({ x0: X1, x1: X0, y: 0, z: Z.line, kind: 'walk', name: '白線', base: true });
-    // 縁石と歩道
-    box(span, 0.18, 0.3, mat({ color: '#a7a39b' }), mid, 0.09, -(Z.line + 0.6));
+    const curbM = mat({ color: '#a7a39b' });
     const sw = TEX.sidewalk.clone();
     sw.needsUpdate = true;
-    sw.repeat.set(span / 3, 2.5);
-    const walk = new T.Mesh(new T.PlaneGeometry(span, 9), mat({ map: sw }));
-    walk.rotation.x = -Math.PI / 2;
-    walk.position.set(mid, 0.18, -(Z.line + 5.2));
-    walk.receiveShadow = true;
-    scene.add(walk);
-    // 建物の前の空地（タイル）
-    const plaza = new T.Mesh(new T.PlaneGeometry(span, 12), mat({ map: sw }));
-    plaza.rotation.x = -Math.PI / 2;
-    plaza.position.set(mid, 0.17, -(Z.front - 4));
-    plaza.receiveShadow = true;
-    scene.add(plaza);
-    // 建物の前の地面
+    for (const [a2, b2] of clip(X1, X0)) {
+      const len = b2 - a2;
+      const cx = (a2 + b2) / 2;
+      // 路肩の白線（走れる）
+      const line = new T.Mesh(new T.PlaneGeometry(len, 0.2), lineM);
+      line.rotation.x = -Math.PI / 2;
+      line.position.set(cx, 0.012, -Z.line);
+      scene.add(line);
+      platforms.push({ x0: a2, x1: b2, y: 0, z: Z.line, kind: 'walk', name: '白線', base: true });
+      // 縁石と歩道・建物の前の空地
+      box(len, 0.18, 0.3, curbM, cx, 0.09, -(Z.line + 0.6), true);
+      const t1 = sw.clone();
+      t1.needsUpdate = true;
+      t1.repeat.set(len / 3, 2.5);
+      const walk = new T.Mesh(new T.PlaneGeometry(len, 9), mat({ map: t1 }));
+      walk.rotation.x = -Math.PI / 2;
+      walk.position.set(cx, 0.18, -(Z.line + 5.2));
+      walk.receiveShadow = true;
+      scene.add(walk);
+      const t2 = sw.clone();
+      t2.needsUpdate = true;
+      t2.repeat.set(len / 3, 3);
+      const plaza = new T.Mesh(new T.PlaneGeometry(len, 12), mat({ map: t2 }));
+      plaza.rotation.x = -Math.PI / 2;
+      plaza.position.set(cx, 0.17, -(Z.front - 4));
+      plaza.receiveShadow = true;
+      scene.add(plaza);
+    }
+    // 建物の向こうの地面
     const back = new T.Mesh(new T.PlaneGeometry(span, 600), mat({ color: '#77736c' }));
     back.rotation.x = -Math.PI / 2;
     back.position.set(mid, 0.02, -310);
     scene.add(back);
+    // 交差点と川
+    const stripeM = mat({ color: '#efefea' });
+    const sigM = mat({ color: '#8f9399' });
+    for (const g of gaps) {
+      const w = g.x1 - g.x0;
+      const cx = (g.x0 + g.x1) / 2;
+      if (g.kind === 'river') {
+        // 川: 水面と護岸。橋の欄干だけが走れる
+        const water = new T.Mesh(new T.PlaneGeometry(w, 400), new T.MeshLambertMaterial({ color: '#1f3b46' }));
+        water.rotation.x = -Math.PI / 2;
+        water.position.set(cx, -2.5, -200);
+        scene.add(water);
+        box(0.6, 3, 400, mat({ color: '#8b877f' }), g.x0, -1, -200, true);
+        box(0.6, 3, 400, mat({ color: '#8b877f' }), g.x1, -1, -200, true);
+        // 橋の欄干（走れる）
+        box(w, 0.12, 0.2, mat({ color: '#6f7a82' }), cx, 1.1, -Z.rail, true);
+        for (let px = g.x0 + 0.3; px < g.x1; px += 1.2) box(0.06, 1.1, 0.06, mat({ color: '#6f7a82' }), px, 0.55, -Z.rail, true);
+        platforms.push({ x0: g.x0, x1: g.x1, y: 1.15, z: Z.rail, kind: 'walk', name: '橋の欄干' });
+        // 橋桁の下は暗い
+        box(w, 0.5, 6, mat({ color: '#55595e' }), cx, -0.25, -(Z.line - 2), true);
+        continue;
+      }
+      // 交差点: 横の道路と横断歩道、信号機
+      const side = new T.Mesh(new T.PlaneGeometry(w, 400), mat({ map: (() => { const t = TEX.asphalt.clone(); t.needsUpdate = true; t.repeat.set(w / 6, 60); return t; })() }));
+      side.rotation.x = -Math.PI / 2;
+      side.position.set(cx, 0.015, -(Z.line + 200));
+      side.receiveShadow = true;
+      scene.add(side);
+      for (let px = g.x0 + 0.6; px < g.x1 - 0.4; px += 0.9) box(0.45, 0.02, 3.2, stripeM, px, 0.03, -(Z.line + 2.2), true);
+      for (const px of [g.x0 - 0.6, g.x1 + 0.6]) {
+        box(0.2, 4.6, 0.2, sigM, px, 2.3, -(Z.line + 1.2));
+        const head = box(1.2, 0.4, 0.35, mat({ color: '#30353a' }), px, 4.6, -(Z.line + 1.2));
+        head.castShadow = true;
+      }
+    }
 
     // ガードレール（区間ごと・切れ目あり）
     const railM = mat({
@@ -524,31 +589,32 @@
     const postM = mat({ color: '#cfcfc9' });
     for (let x = X0; x > X1; ) {
       const len = 25 + r() * 45;
-      if (r() < 0.75) {
-        const x1 = x;
-        const x0 = x - len;
-        box(len, 0.3, 0.06, railM, (x0 + x1) / 2, 0.66, -Z.rail, true);
-        for (let px = x1 - 1; px > x0; px -= 4) box(0.12, 0.7, 0.12, postM, px, 0.35, -Z.rail - 0.08, true);
-        platforms.push({ x0, x1, y: 0.82, z: Z.rail, kind: 'walk', name: 'ガードレール' });
+      if (r() < 0.7) {
+        for (const [x0, x1] of clip(x - len, x)) {
+          box(x1 - x0, 0.3, 0.06, railM, (x0 + x1) / 2, 0.66, -Z.rail, true);
+          for (let px = x1 - 1; px > x0; px -= 4) box(0.12, 0.7, 0.12, postM, px, 0.35, -Z.rail - 0.08, true);
+          platforms.push({ x0, x1, y: 0.82, z: Z.rail, kind: 'walk', name: 'ガードレール' });
+        }
       }
       x -= len + 6 + r() * 14;
     }
     // フェンス（工事現場・公園などの区間）
     const fencePostM = mat({ color: '#476052' });
-    const fenceT = TEX.fence.clone();
-    fenceT.needsUpdate = true;
     for (let x = X0 - 30; x > X1; ) {
       const len = 20 + r() * 40;
       if (r() < 0.45) {
-        const ft = fenceT.clone();
-        ft.needsUpdate = true;
-        ft.repeat.set(len / 1.2, 1);
-        const f = new T.Mesh(new T.PlaneGeometry(len, 1.3), new T.MeshLambertMaterial({ map: ft, transparent: true, alphaTest: 0.3, side: T.DoubleSide }));
-        f.position.set(x - len / 2, 0.83, -Z.fence);
-        scene.add(f);
-        box(len, 0.05, 0.05, mat({ color: '#476052' }), x - len / 2, 1.48, -Z.fence);
-        for (let px = x; px > x - len; px -= 2.4) box(0.06, 1.5, 0.06, fencePostM, px, 0.75, -Z.fence, true);
-        platforms.push({ x0: x - len, x1: x, y: 1.5, z: Z.fence, kind: 'walk', name: 'フェンス' });
+        for (const [x0, x1] of clip(x - len, x)) {
+          const L = x1 - x0;
+          const ft = TEX.fence.clone();
+          ft.needsUpdate = true;
+          ft.repeat.set(L / 1.2, 1);
+          const fm = new T.Mesh(new T.PlaneGeometry(L, 1.3), new T.MeshLambertMaterial({ map: ft, transparent: true, alphaTest: 0.3, side: T.DoubleSide }));
+          fm.position.set((x0 + x1) / 2, 0.83, -Z.fence);
+          scene.add(fm);
+          box(L, 0.05, 0.05, fencePostM, (x0 + x1) / 2, 1.48, -Z.fence, true);
+          for (let px = x1; px > x0; px -= 2.4) box(0.06, 1.5, 0.06, fencePostM, px, 0.75, -Z.fence, true);
+          platforms.push({ x0, x1, y: 1.5, z: Z.fence, kind: 'walk', name: 'フェンス' });
+        }
       }
       x -= len + 10 + r() * 30;
     }
@@ -556,6 +622,10 @@
     const poleM = mat({ color: '#a19d95' });
     let prevTop = null;
     for (let x = X0; x > X1; x -= 30 + r() * 8) {
+      if (inGap(x - 0.3, x + 0.3)) {
+        prevTop = null;
+        continue;
+      }
       box(0.32, 10.5, 0.32, poleM, x, 5.25, -Z.pole);
       box(1.6, 0.12, 0.12, poleM, x, 9.4, -Z.pole);
       if (r() < 0.5) box(0.5, 0.8, 0.5, mat({ color: '#7d7a73' }), x + 0.4, 7.6, -Z.pole);
@@ -571,15 +641,15 @@
       }
       prevTop = x;
     }
-    // 街路樹（見た目だけ）: 描いた葉の板を十字に組む
+    // 街路樹（見た目だけ）
     const treeTex = canvasTex(256, 256, (g, w, h) => {
       g.clearRect(0, 0, w, h);
       for (let i = 0; i < 1400; i++) {
-        const a = Math.random() * Math.PI * 2;
+        const a3 = Math.random() * Math.PI * 2;
         const rr = Math.sqrt(Math.random()) * 110;
-        const x = w / 2 + Math.cos(a) * rr;
-        const y = h * 0.47 + Math.sin(a) * rr * 0.85;
-        const shade = 0.55 + (1 - (y / h)) * 0.5 + (x < w / 2 ? 0.1 : -0.05);
+        const x = w / 2 + Math.cos(a3) * rr;
+        const y = h * 0.47 + Math.sin(a3) * rr * 0.85;
+        const shade = 0.55 + (1 - y / h) * 0.5 + (x < w / 2 ? 0.1 : -0.05);
         g.fillStyle = `hsl(${88 + Math.random() * 30},${30 + Math.random() * 20}%,${Math.min(60, (14 + Math.random() * 18) * shade + 6)}%)`;
         g.beginPath();
         g.ellipse(x, y, 3 + Math.random() * 4, 2 + Math.random() * 3, Math.random() * 3, 0, 7);
@@ -590,15 +660,16 @@
     });
     const treeM = new T.MeshLambertMaterial({ map: treeTex, transparent: true, alphaTest: 0.4, side: T.DoubleSide });
     for (let x = X0 - 8; x > X1; x -= 14 + r() * 10) {
-      if (r() < 0.3) continue;
+      if (r() < 0.3 || inGap(x - 3, x + 3)) continue;
       const s2 = 5.5 + r() * 2;
       const t = new T.Mesh(new T.PlaneGeometry(s2, s2), treeM);
       t.position.set(x, s2 / 2, -(Z.front - 6));
       t.castShadow = true;
       scene.add(t);
     }
-    // 標識（上の板に乗れる）
-    for (let x = X0 - 130; x > X1; x -= 110 + r() * 90) {
+    // 標識（上の板に乗れる・横からぶつかる）
+    for (let x = X0 - 130; x > X1; x -= 80 + r() * 70) {
+      if (inGap(x - 2.4, x + 0.6)) continue;
       box(0.14, 3.6, 0.14, mat({ color: '#9aa0a6' }), x, 1.8, -Z.sign);
       const plate = new T.Mesh(new T.PlaneGeometry(2.6, 1.6), mat({ map: TEX.sign }));
       plate.position.set(x - 0.9, 3.9, -Z.sign + 0.05);
@@ -607,8 +678,9 @@
     }
     // 自販機（上に乗れる・横からぶつかる）
     const vendM = [mat({ map: TEX.vend }), mat({ color: '#d8dde0' })];
-    for (let x = X0 - 90; x > X1; x -= 45 + r() * 70) {
+    for (let x = X0 - 90; x > X1; x -= 30 + r() * 45) {
       const n = r() < 0.4 ? 2 : 1;
+      if (inGap(x - n * 1.1, x + 0.6)) continue;
       for (let i = 0; i < n; i++) {
         const vx = x - i * 1.05;
         const v = new T.Mesh(new T.BoxGeometry(1.0, 1.85, 0.8), [vendM[1], vendM[1], vendM[1], vendM[1], vendM[0], vendM[1]]);
@@ -618,11 +690,39 @@
       }
       platforms.push({ x0: x - n * 1.05 + 0.5, x1: x + 0.5, y: 2.05, z: Z.vend, kind: 'solid', name: '自販機', bodyY0: 0.18 });
     }
+    // 白線の上のカラーコーン（すぐ近くを速く流れてくる。跳び越える）
+    const coneM = mat({ color: '#f26a1b' });
+    const bandM = mat({ color: '#f4f4f0' });
+    for (let x = X0 - 160; x > X1; x -= 70 + r() * 90) {
+      const n = 1 + Math.floor(r() * 3);
+      if (inGap(x - n * 1.6, x + 0.5)) continue;
+      for (let i = 0; i < n; i++) {
+        const cx = x - i * 1.6;
+        const c = new T.Mesh(new T.ConeGeometry(0.22, 0.7, 14), coneM);
+        c.position.set(cx, 0.4, -(Z.line + 0.15));
+        c.castShadow = true;
+        scene.add(c);
+        const bnd = new T.Mesh(new T.CylinderGeometry(0.11, 0.14, 0.1, 14), bandM);
+        bnd.position.set(cx, 0.48, -(Z.line + 0.15));
+        scene.add(bnd);
+        box(0.42, 0.05, 0.42, coneM, cx, 0.03, -(Z.line + 0.15), true);
+      }
+      platforms.push({ x0: x - (n - 1) * 1.6 - 0.25, x1: x + 0.25, y: 0.75, z: Z.line, kind: 'solid', name: 'カラーコーン', bodyY0: 0 });
+    }
 
     // 手前の建物（屋上は走れる）。ベランダ・庇・室外機などの凹凸で影ができる
     let bx = X0;
     while (bx > X1) {
-      const w = 8 + r() * 14;
+      let w = 8 + r() * 14;
+      // 交差点・川には建てない
+      const gHit = gaps.find((g) => bx > g.x0 - 1 && bx - w < g.x1 + 1);
+      if (gHit) {
+        if (bx > g_end(gHit)) w = Math.max(0, bx - (gHit.x1 + 1));
+        if (w < 4) {
+          bx = gHit.x0 - 1;
+          continue;
+        }
+      }
       const floors = r() < 0.7 ? 2 : 3;
       const fh = 3.0;
       const h = floors * fh + 0.5;

@@ -15,11 +15,26 @@
       road: '国道15号 第一京浜',
       seed: 1501,
       length: 2400,
-      speed: 14, // m/s（約50km/h）
+      speed: 17, // m/s（約60km/h）。進むほど速くなる（最後は約1.35倍）
       sky: ['#3f78bf', '#bcd2e6', '#7c8187'],
       fog: '#c3d1dc',
       landmarks: [{ x: -1760, kind: 'tokyoTower' }],
       signals: [380, 900, 1350, 1800, 2150],
+      // 白線が途切れる所（交差点・川）。落ちると大きく離される
+      gaps: [
+        { d: 180, w: 12, kind: 'cross' },
+        { d: 382, w: 18, kind: 'cross' },
+        { d: 620, w: 14, kind: 'cross' },
+        { d: 760, w: 10, kind: 'cross' },
+        { d: 902, w: 20, kind: 'cross' },
+        { d: 1100, w: 14, kind: 'cross' },
+        { d: 1352, w: 18, kind: 'cross' },
+        { d: 1550, w: 12, kind: 'cross' },
+        { d: 1802, w: 20, kind: 'cross' },
+        { d: 1950, w: 34, kind: 'river', name: '金杉橋（古川）' },
+        { d: 2152, w: 16, kind: 'cross' },
+        { d: 2300, w: 12, kind: 'cross' },
+      ],
       places: [
         [0, '日本橋'],
         [560, '銀座'],
@@ -39,7 +54,8 @@
     jump2: 1.12, // 2段目
     coyote: 0.09,
     stun: 0.6, // ぶつかったときのよろけ時間
-    knock: 0.1, // ぶつかると後ろへ離される量（画面幅に対する割合）
+    knock: 0.16, // ぶつかると後ろへ離される量（画面幅に対する割合）
+    fall: 0.3, // 白線の切れ目に落ちたときに離される量
     regain: 0.08, // 赤信号で止まっている間に取り戻す速さ（毎秒）
     stride: 3.2, // 1秒あたりの走りの周期（速いほど脚の回転が速い）
     inv: 1.2, // ぶつかった直後の無敵時間
@@ -144,7 +160,8 @@
   // ---------- 車の速さ（信号で止まる） ----------
   function driveCar(dt) {
     const d = -S.camX;
-    const v = S.st.speed;
+    // 進むほど速くなる
+    const v = S.st.speed * (1 + 0.35 * Math.min(1, -S.camX / S.st.length));
     let target = v;
     for (const s of S.signals) {
       if (s.done || !s.red) continue;
@@ -153,9 +170,9 @@
         s.done = true;
         continue;
       }
-      if (left < 34) {
+      if (left < 120) {
         // ブレーキ: 残りの距離で止まれる速さ
-        target = Math.min(target, Math.sqrt(Math.max(0, 2 * 1.4 * Math.max(0, left - 0.5))));
+        target = Math.min(target, Math.sqrt(Math.max(0, 2 * 2.4 * Math.max(0, left - 0.5))));
         if (left < 0.8 && S.speed < 0.3) {
           if (!S.stopping) {
             S.stopping = s;
@@ -241,9 +258,9 @@
             if (!best || sp.top < best.top) best = { p, top: sp.top };
           }
         }
-        // 白線より下へ落ちることはない（いちばん下の足場）
-        const baseP = plats.find((p) => p.base);
-        if (!best && baseP && S.ry >= screenPlat2(baseP).top) best = { p: baseP, top: screenPlat2(baseP).top };
+        // 白線の切れ目（交差点・川）に落ちた
+        const baseY = sy(0, W3.Z.line);
+        if (!best && S.ry > baseY + H * 0.05) return fell();
         if (best) {
           S.on = best.p;
           S.ry = best.top;
@@ -277,6 +294,21 @@
       top: CY - (p.y - W3.CAM_Y - S.bump) * k,
       bot: p.bodyY0 !== undefined ? CY - (p.bodyY0 - W3.CAM_Y - S.bump) * k : H,
     };
+  }
+  // 落ちたら大きく離されて、下から跳ね上がって復帰
+  function fell() {
+    S.falls = (S.falls || 0) + 1;
+    S.lag += P.fall * W;
+    S.on = null;
+    S.vy = -1.75 * H;
+    S.jumps = 2;
+    S.air = P.coyote;
+    S.inv = 1.0;
+    S.stun = 0.35;
+    say('落ちた！', 1.2);
+    sfx.fall();
+    haptics.vibrate([40, 30, 90]);
+    if (S.rx > W * P.winR) gameOver();
   }
   function jump() {
     if (!S || S.over || S.clear) return;
@@ -408,7 +440,25 @@
     g.fillStyle = 'rgba(255,255,255,0.06)';
     g.fillRect(0, wb + H * 0.012, W, 2);
 
+    drawGapWarn(wl);
     drawHud();
+  }
+  // 白線の切れ目が近づいたら、窓の左端に「！」
+  function drawGapWarn(wl) {
+    const z = W3.Z.line;
+    const y = sy(0, z);
+    for (const gp of S.st.gaps || []) {
+      const x = sx(-gp.d, z); // 切れ目の手前のふち（左から流れてくる）
+      if (x > wl && x < W) continue;
+      if (x <= -W * 1.2 || x > W) continue;
+      const a = 0.5 + 0.5 * Math.sin(performance.now() / 70);
+      g.fillStyle = `rgba(255,${gp.kind === 'river' ? 90 : 200},40,${0.55 + a * 0.45})`;
+      g.font = `900 ${Math.round(H * 0.09)}px "M PLUS Rounded 1c", sans-serif`;
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      g.fillText(gp.kind === 'river' ? '！川' : '！', wl + W * 0.01, y - H * 0.06);
+      break;
+    }
   }
   // 流れる光の線（速さが出ているときだけ）
   const lines = [];
@@ -508,7 +558,7 @@
     g.font = `800 ${Math.round(H * 0.032)}px "M PLUS Rounded 1c", sans-serif`;
     g.fillText(`${st.road}　いま：${placeNow()}`, W * 0.06, H * 0.025);
     g.textAlign = 'right';
-    g.fillText(`${Math.round(S.speed * 3.6)}km/h　ぶつかった ${S.hits}`, W * 0.94, H * 0.025);
+    g.fillText(`${Math.round(S.speed * 3.6)}km/h　ぶつかった ${S.hits}　落ちた ${S.falls || 0}`, W * 0.94, H * 0.025);
     // 信号
     if (S.stopping) {
       g.fillStyle = '#ff4d4d';
@@ -531,7 +581,8 @@
 
   // ---------- ループ ----------
   function loop(now) {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    // 開始直後は requestAnimationFrame の時刻が少し前になることがあるので、マイナスにしない
+    const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
     last = now;
     if (!S.over && !S.clear && !paused) {
       driveCar(dt);
@@ -555,6 +606,10 @@
     jump: () => audio.tone(520, 0.08, { type: 'triangle', vol: 0.12, to: 880 }),
     jump2: () => audio.tone(700, 0.08, { type: 'triangle', vol: 0.12, to: 1200 }),
     land: () => audio.noise(0.05, { vol: 0.12, cutoff: 900 }),
+    fall: () => {
+      audio.tone(600, 0.5, { type: 'sawtooth', vol: 0.1, to: 120 });
+      audio.noise(0.25, { vol: 0.3, cutoff: 500, delay: 0.3 });
+    },
     hit: () => {
       audio.noise(0.18, { vol: 0.4, cutoff: 700 });
       audio.tone(180, 0.2, { type: 'square', vol: 0.1, to: 80 });
@@ -575,8 +630,8 @@
     const d = Math.min(S.st.length, -S.camX);
     const best = storage.get('shaso.best1', null);
     $('result-sub').innerHTML = win
-      ? `タイム ${S.t.toFixed(1)}秒　ぶつかった ${S.hits}回${best ? `<br>ベスト ${best.toFixed(1)}秒` : ''}`
-      : `${placeNow()}あたりで脱落（${Math.round((d / S.st.length) * 100)}%）　ぶつかった ${S.hits}回`;
+      ? `タイム ${S.t.toFixed(1)}秒　ぶつかった ${S.hits}回・落ちた ${S.falls || 0}回${best ? `<br>ベスト ${best.toFixed(1)}秒` : ''}`
+      : `${placeNow()}あたりで脱落（${Math.round((d / S.st.length) * 100)}%）　ぶつかった ${S.hits}回・落ちた ${S.falls || 0}回`;
     show('result');
   }
   $('btn-start').addEventListener('click', () => {
