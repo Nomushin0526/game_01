@@ -9,7 +9,7 @@
   const rng = Math.random;
   const FAST = /fast/.test(location.hash); // 開発用: 演出を飛ばす
   const sleep = (ms) => new Promise((r) => setTimeout(r, FAST ? 0 : ms));
-  const ICON = { attack: '⚔', heal: '♥', guard: '🛡' };
+  const ICON = { attack: '⚔', heal: '♥', guard: '🛡', buff: '⬆', debuff: '⬇', break: '💥' };
 
   const sfx = {
     tap: () => audio.tone(700, 0.04, { type: 'square', vol: 0.06 }),
@@ -68,18 +68,32 @@
     const p = G.p[pi];
     p.shield = 0;
     p.summoned = false;
-    for (const s of p.field) if (s) s.used = false;
+    for (const s of p.field) {
+      if (!s) continue;
+      s.used = false;
+      if (s.sleep) {
+        // 眠っている・しばられている文は、このターン発動できない
+        s.used = true;
+        s.sleep = 0;
+        s.napping = true;
+      } else s.napping = false;
+    }
     G.sel = null;
     G.selSlot = null;
     G.targeting = null;
     if (G.turnNo > 1) {
       if (!p.deck.length) {
-        log(`${who(pi)}の山札が切れた！`);
-        return finish(1 - pi);
+        // 言葉切れ: 山札がないと、引くたびにダメージが増えていく
+        p.fatigue = (p.fatigue || 0) + 10;
+        log(`${who(pi)}は言葉が出てこない…（山札切れで${p.fatigue}ダメージ）`);
+        damage(pi, p.fatigue, true);
+        render();
+        if (checkEnd()) return;
+      } else {
+        const c = p.deck.pop();
+        if (p.hand.length >= K.HAND_MAX) log(`${who(pi)}の手札がいっぱいで「${CARDS[c].word}」は捨て札に`);
+        else p.hand.push(c);
       }
-      const c = p.deck.pop();
-      if (p.hand.length >= K.HAND_MAX) log(`${who(pi)}の手札がいっぱいで「${CARDS[c].word}」は捨て札に`);
-      else p.hand.push(c);
     }
     banner(pi === 0 ? 'あなたのターン' : '相手のターン', pi);
     if (pi === 0) {
@@ -188,8 +202,7 @@
         log(`聞き間違えられて「${K.text(s)}」になった！`);
         render();
         await speak(pi, K.text(s), ev);
-        if (ev.act === 'attack' && target === null) target = pickAuto(pi, ev);
-        if (ev.act !== 'attack') target = null;
+        target = pickAuto(pi, slot, ev, target);
       }
       if (t === 'nitpick') reflect = true;
       if (t === 'silence') zero = true;
@@ -211,6 +224,46 @@
         log(`辛さのおすそわけ！${who(1 - pi)}に${ev.extra}ダメージ`);
         damage(1 - pi, ev.extra);
       }
+    } else if (ev.act === 'buff') {
+      const t = typeof target === 'number' ? p.field[target] : null;
+      if (!t || target === slot) log(`${who(pi)}の${name}…強くする相手がいなかった`);
+      else {
+        t.bonus = (t.bonus || 0) + ev.value;
+        log(`${who(pi)}の${name}で「${K.text(t)}」がパワーアップ！（+${ev.value}）`);
+        flash(pi, target);
+        sfx.heal();
+      }
+    } else if (ev.act === 'debuff') {
+      const t = typeof target === 'number' ? op.field[target] : null;
+      if (!t) log(`${who(pi)}の${name}…相手の言葉がなかった`);
+      else {
+        t.bonus = (t.bonus || 0) - ev.value;
+        const left = K.evaluate(t).base + t.bonus;
+        if (left <= 0) {
+          log(`${who(pi)}の${name}で「${K.text(t)}」は力を失って消えた！`);
+          op.field[target] = null;
+          flash(1 - pi, target, true);
+          sfx.hit();
+        } else {
+          if (ev.sleep) t.sleep = 1;
+          log(`${who(pi)}の${name}で「${K.text(t)}」が弱った（-${ev.value}）${ev.sleep ? '　次のターンは動けない💤' : ''}`);
+          flash(1 - pi, target);
+          sfx.guard();
+        }
+      }
+    } else if (ev.act === 'break') {
+      const set = op.traps.map((k, i) => (k ? i : -1)).filter((i) => i >= 0);
+      if (set.length) {
+        const i = set[Math.floor(rng() * set.length)];
+        log(`${who(pi)}の${name}！ 伏せカード「${CARDS[op.traps[i]].word}」を破壊した`);
+        op.traps[i] = null;
+        shake();
+      } else if (op.hand.length) {
+        const i = Math.floor(rng() * op.hand.length);
+        const k = op.hand.splice(i, 1)[0];
+        log(`${who(pi)}の${name}！ ${who(1 - pi)}の手札「${CARDS[k].word}」を捨てさせた`);
+      } else log(`${who(pi)}の${name}…何も起きなかった`);
+      sfx.hit();
     } else if (ev.act === 'guard') {
       p.shield += ev.value;
       log(`${who(pi)}の${name}で 守り+${ev.value}（次の自分のターンまで）`);
@@ -277,12 +330,19 @@
     render();
     return sleep(pi === 1 ? 500 : 50).then(() => true);
   }
-  // 聞き間違いで攻撃に変わったときの相手
-  function pickAuto(pi, ev) {
+  // 聞き間違いで効果が変わったときの対象
+  function pickAuto(pi, slot, ev, prev) {
     const op = G.p[1 - pi];
-    if (ev.slip) return 'direct';
+    const me = G.p[pi];
+    if (ev.target === 'own') {
+      const i = me.field.findIndex((x, j) => x && j !== slot);
+      return i < 0 ? null : i;
+    }
+    if (ev.target !== 'op') return null;
+    if (typeof prev === 'number' && op.field[prev]) return prev;
+    if (ev.act === 'attack' && (ev.slip || !op.field.some(Boolean))) return 'direct';
     const i = op.field.findIndex(Boolean);
-    return i < 0 ? 'direct' : i;
+    return i < 0 ? null : i;
   }
   function damage(pi, amount, pierce) {
     const p = G.p[pi];
@@ -391,7 +451,7 @@
     const note = ev.notes.length ? `<div class="ci-notes">${ev.notes.join('　')}</div>` : '';
     return cut(
       `<div class="ci-band"><div class="ci-kicker">${pi === 0 ? 'あなたの言霊' : '相手の言霊'}</div><div class="ci-title">「${text}」</div>
-       <div class="ci-val act-${ev.act}">${ICON[ev.act]} ${K.ACT[ev.act]} ${ev.value}</div>${note}</div>`,
+       <div class="ci-val act-${ev.act}">${ICON[ev.act]} ${K.ACT[ev.act]}${ev.act === 'break' ? '' : ' ' + ev.value}</div>${note}</div>`,
       pi === 0 ? 'me' : 'op',
       pi === 0 ? 1100 : 1400
     );
@@ -438,8 +498,10 @@
     return `<div class="sent act-${ev.act}${s.used ? ' used' : ''}">
       <div class="sw">${pcs}</div>
       <div class="stag">${K.ACT[ev.act]}・${ev.consume ? '1回きり' : '場に残る'}</div>
-      <div class="sbot"><span class="sv">${ICON[ev.act]}${ev.value}</span><span class="sd">守${K.defense(s)}</span></div>${prev}
-      ${s.used ? '<div class="used-tag">発動ずみ</div>' : ''}</div>`;
+      <div class="sbot"><span class="sv">${ICON[ev.act]}${ev.act === 'break' ? '妨害' : ev.value}</span><span class="sd">守${K.defense(s)}</span></div>${prev}
+      ${s.bonus ? `<div class="bonus ${s.bonus > 0 ? 'up' : 'down'}">${s.bonus > 0 ? '+' : ''}${s.bonus}</div>` : ''}
+      ${s.sleep ? '<div class="zz">💤</div>' : ''}
+      ${s.used ? `<div class="used-tag">${s.napping ? 'おやすみ中💤' : '発動ずみ'}</div>` : ''}</div>`;
   }
   function handCardHTML(key, i, sel) {
     const c = CARDS[key];
@@ -486,13 +548,13 @@
     $('op-traps').innerHTML = op.traps.map((t) => `<div class="tslot${t ? ' set' : ''}">${t ? '<span>伏</span>' : ''}</div>`).join('');
     $('op-field').innerHTML = op.field
       .map((s, i) => {
-        const tg = G.targeting !== null && s ? ' target' : '';
+        const tg = G.targeting !== null && G.tmode === 'op' && s ? ' target' : '';
         return `<div class="slot${s ? '' : ' empty'}${tg}" data-op="${i}">${s ? sentenceHTML(s) : ''}</div>`;
       })
       .join('');
     $('me-field').innerHTML = me.field
       .map((s, i) => {
-        const can = vt.slots.has(i);
+        const can = vt.slots.has(i) || (G.targeting !== null && G.tmode === 'own' && s && i !== G.targeting);
         const cls = (s ? '' : ' empty') + (can ? ' target' : '') + (G.selSlot === i || G.targeting === i ? ' chosen' : '');
         const inner = s ? sentenceHTML(s, { preview: vt.slots.get(i) }) : can ? '<span class="put">ここに出す</span>' : '';
         return `<div class="slot${cls}" data-me="${i}">${inner}</div>`;
@@ -520,8 +582,13 @@
       const s = me.field[G.targeting];
       const ev = K.evaluate(s);
       const op = G.p[1];
-      const direct = ev.slip || !op.field.some(Boolean);
-      el.innerHTML = `<p class="hint"><b>「${K.text(s)}」⚔${ev.value}</b>　攻撃する相手の言葉をタップ（守備より大きいと破壊・あまりは貫通。守備に届かないと差の分だけ反動）</p>
+      const direct = ev.act === 'attack' && (ev.slip || !op.field.some(Boolean));
+      const how = {
+        attack: '攻撃する相手の言葉をタップ（守備より大きいと破壊・あまりは貫通。守備に届かないと差の分だけ反動）',
+        buff: '強くする自分の文をタップ',
+        debuff: `弱らせる相手の文をタップ${ev.sleep ? '（次のターン動けなくなる）' : ''}`,
+      }[ev.act];
+      el.innerHTML = `<p class="hint"><b>「${K.text(s)}」${ICON[ev.act]}${ev.value}</b>　${how}</p>
         <div class="info-row">${direct ? '<button class="mini-btn primary" data-direct>相手に直接攻撃</button>' : ''}<button class="mini-btn" data-cancel>やめる</button></div>`;
       return;
     }
@@ -537,8 +604,18 @@
     if (G.selSlot !== null && me.field[G.selSlot]) {
       const s = me.field[G.selSlot];
       const ev = K.evaluate(s);
-      const no = s.used ? '（このターンは発動ずみ）' : ev.act === 'attack' && !canAttack() ? '（先攻1ターン目は攻撃できない）' : '';
-      el.innerHTML = `<p class="hint"><b>「${K.text(s)}」</b>　${ICON[ev.act]}${K.ACT[ev.act]} ${ev.value}${ev.consume ? '（使うとなくなる）' : '（場に残る）'}<br><span class="sub">${ev.notes.join('・') || 'ほかの言葉を重ねると強くなる'}</span></p>
+      const no = s.used
+        ? s.napping
+          ? '（眠っていて動けない）'
+          : '（このターンは発動ずみ）'
+        : ev.act === 'attack' && !canAttack()
+          ? '（先攻1ターン目は攻撃できない）'
+          : ev.act === 'buff' && !me.field.some((x, j) => x && j !== G.selSlot)
+            ? '（強くする自分の文がない）'
+            : ev.act === 'debuff' && !G.p[1].field.some(Boolean)
+              ? '（相手の場に言葉がない）'
+              : '';
+      el.innerHTML = `<p class="hint"><b>「${K.text(s)}」</b>　${ICON[ev.act]}${K.ACT[ev.act]} ${ev.value}${ev.consume ? '（使うとなくなる）' : '（場に残る）'}<br><span class="sub">${K.ACT_DESC[ev.act]}</span><br><span class="sub">${ev.notes.join('・') || 'ほかの言葉を重ねると強くなる'}</span></p>
         <div class="info-row"><button class="mini-btn primary" data-activate ${no ? 'disabled' : ''}>発動！${no}</button><button class="mini-btn" data-cancel>とじる</button></div>`;
       return;
     }
@@ -580,6 +657,7 @@
         return render();
       }
     }
+    if (G.targeting !== null && G.tmode === 'own' && p.field[i] && i !== G.targeting) return activate(0, G.targeting, i);
     G.sel = null;
     G.targeting = null;
     G.selSlot = p.field[i] && G.selSlot !== i ? i : null;
@@ -599,7 +677,7 @@
   });
   $('op-field').addEventListener('click', (e) => {
     const d = e.target.closest('[data-op]');
-    if (!d || !myTurn() || G.targeting === null) return;
+    if (!d || !myTurn() || G.targeting === null || G.tmode !== 'op') return;
     const i = +d.dataset.op;
     if (!G.p[1].field[i]) return;
     activate(0, G.targeting, i);
@@ -617,9 +695,10 @@
       const slot = G.selSlot;
       const s = G.p[0].field[slot];
       const ev = K.evaluate(s);
-      if (ev.act !== 'attack') return activate(0, slot, null);
-      if (!G.p[1].field.some(Boolean)) return activate(0, slot, 'direct');
+      if (!ev.target) return activate(0, slot, null);
+      if (ev.act === 'attack' && !G.p[1].field.some(Boolean)) return activate(0, slot, 'direct');
       G.targeting = slot;
+      G.tmode = ev.target;
       G.selSlot = null;
       sfx.tap();
       render();

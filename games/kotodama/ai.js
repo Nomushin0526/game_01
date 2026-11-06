@@ -10,8 +10,12 @@
     const op = G.p[1 - me];
     const ev = K.evaluate(s);
     let w = 1;
+    const others = p.field.filter((x) => x && x !== s && x.uid !== s.uid);
     if (ev.act === 'heal') w = K.MAX_HP - p.hp >= ev.value * 0.5 ? 0.9 : 0.35;
     else if (ev.act === 'guard') w = 0.6;
+    else if (ev.act === 'buff') w = others.length ? 0.85 : 0.2;
+    else if (ev.act === 'debuff') w = op.field.some(Boolean) ? (ev.sleep ? 1 : 0.85) : 0.25;
+    else if (ev.act === 'break') return (op.traps.some(Boolean) ? 32 : 14) + ev.value * 0.1 - ev.selfDmg;
     let v = ev.value * w - ev.selfDmg * 1.2 + ev.extra + ev.draw * 12;
     const baseConsume = s.verb && CARDS[s.verb].consume;
     if (s.aux === 'a_makuru' && !baseConsume && ev.act !== 'heal') v -= ev.value * 0.45; // 場に残る文を使い切るのはもったいない
@@ -117,35 +121,69 @@
       }
       if (!did) break;
     }
-    // 4. 発動する
-    for (let guard = 0; guard < 6; guard++) {
+    // 4. 発動する（妨害 → デバフ → バフ → 攻撃 → 回復・守り の順に考える）
+    const PRI = { break: 0, debuff: 1, buff: 2, attack: 3, heal: 4, guard: 5 };
+    for (let guard = 0; guard < 8; guard++) {
       const order = p.field
-        .map((s, i) => (s && !s.used ? { i, v: K.evaluate(s).value } : null))
+        .map((s, i) => (s && !s.used ? { i, ev: K.evaluate(s) } : null))
         .filter(Boolean)
-        .sort((a, b) => b.v - a.v);
+        .sort((a, b) => PRI[a.ev.act] - PRI[b.ev.act] || b.ev.value - a.ev.value);
       let acted = false;
-      for (const { i } of order) {
-        const s = p.field[i];
-        const ev = K.evaluate(s);
-        if (ev.act === 'attack') {
-          if (!api.canAttack()) continue;
-          const t = pickTarget(G, me, ev);
-          if (t === null) continue;
-          await api.activate(me, i, t);
-        } else if (ev.act === 'heal') {
-          const need = K.MAX_HP - p.hp;
-          const threatened = op.field.some((x) => x && K.evaluate(x).act === 'attack' && K.evaluate(x).value > K.defense(s));
-          if (need < ev.value * 0.6 && p.hp > 60 && !(ev.draw && (threatened || need >= ev.value * 0.3))) continue;
-          await api.activate(me, i, null);
-        } else {
-          if (!op.field.some((x) => x && K.evaluate(x).act === 'attack')) continue;
-          await api.activate(me, i, null);
-        }
+      for (const { i, ev } of order) {
+        const t = decide(G, me, i, ev, api);
+        if (t === undefined) continue;
+        await api.activate(me, i, t);
         acted = true;
         break;
       }
       if (!acted || G.over) break;
     }
+  }
+
+  // 発動するなら対象（null も可）を返す。しないなら undefined
+  function decide(G, me, i, ev, api) {
+    const p = G.p[me];
+    const op = G.p[1 - me];
+    const s = p.field[i];
+    if (ev.act === 'attack') {
+      if (!api.canAttack()) return undefined;
+      const t = pickTarget(G, me, ev);
+      return t === null ? undefined : t;
+    }
+    if (ev.act === 'heal') {
+      const need = K.MAX_HP - p.hp;
+      const threatened = op.field.some((x) => x && K.evaluate(x).act === 'attack' && K.evaluate(x).value > K.defense(s));
+      if (need < ev.value * 0.6 && p.hp > 60 && !(ev.draw && (threatened || need >= ev.value * 0.3))) return undefined;
+      return null;
+    }
+    if (ev.act === 'guard') return op.field.some((x) => x && K.evaluate(x).act === 'attack') ? null : undefined;
+    if (ev.act === 'break') return op.traps.some(Boolean) || (ev.consume ? false : op.hand.length) ? null : undefined;
+    if (ev.act === 'buff') {
+      // まだ発動していない攻撃の文を優先して強くする
+      let best;
+      let bv = -1;
+      p.field.forEach((x, j) => {
+        if (!x || j === i) return;
+        const e = K.evaluate(x);
+        const v = (e.act === 'attack' ? 2 : 1) * e.value + (x.used ? 0 : 20);
+        if (v > bv) (bv = v), (best = j);
+      });
+      return best === undefined ? undefined : best;
+    }
+    if (ev.act === 'debuff') {
+      // 消せる文、なければいちばん強い攻撃の文
+      let best;
+      let bv = -1;
+      op.field.forEach((x, j) => {
+        if (!x) return;
+        const e = K.evaluate(x);
+        const kill = e.value <= ev.value;
+        const v = e.value * (e.act === 'attack' ? 1.5 : 1) + (kill ? 60 : 0) + (x.sleep ? -30 : 0);
+        if (v > bv) (bv = v), (best = j);
+      });
+      return best === undefined ? undefined : best;
+    }
+    return undefined;
   }
 
   // 相手の行動に、伏せたトラップを使うか。opts: [{ ts, id }]。使うなら opts の番号、使わないなら -1

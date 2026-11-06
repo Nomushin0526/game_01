@@ -789,3 +789,58 @@
   font-size: 12px;
   color: var(--ink-soft);
 }
+
+/* バフ・デバフ・妨害 */
+.sent.act-buff {
+  border-top: 5px solid #e0a400;
+}
+.sent.act-debuff {
+  border-top: 5px solid #8e5bd8;
+}
+.sent.act-break {
+  border-top: 5px solid #444;
+}
+.act-buff .sv {
+  color: #b07f00;
+}
+.act-debuff .sv {
+  color: #7a45c4;
+}
+.act-break .sv {
+  color: #333;
+}
+.ci-val.act-buff {
+  background: #e0a400;
+}
+.ci-val.act-debuff {
+  background: #8e5bd8;
+}
+.ci-val.act-break {
+  background: #333;
+}
+.bonus {
+  position: absolute;
+  right: 4px;
+  bottom: 26px;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #fff;
+}
+.bonus.up {
+  background: #e0a400;
+}
+.bonus.down {
+  background: #8e5bd8;
+}
+.zz {
+  position: absolute;
+  right: 4px;
+  bottom: 48px;
+  font-size: 16px;
+  animation: pulse 1.2s infinite;
+}
+.field.me .slot.target .sent {
+  outline: 3px solid var(--accent);
+}
