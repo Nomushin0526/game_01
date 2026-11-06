@@ -43,7 +43,7 @@
   window.CartSale = {
     duration: 6,
     speedMul: 1.6,
-    gain: { smash: 12, trick: 10, nearMiss: 6, truckRamp: 8 },
+    gain: { smash: 12, trick: 10, nearMiss: 6, hop: 5, ramp: 6, truckRamp: 10 },
   };
 
   // 操作
@@ -61,7 +61,7 @@
       name: '下町のスーパー',
       desc: '買い物客や商品棚をかわして、レジまで駆け抜けろ！',
       length: 5000,
-      slack: 4,
+      slack: 3, // いちばんやさしいステージなので少しだけ余裕を多めに
       hitPenalty: 0.5,
       taPenalty: 3,
       checkpoints: [1250, 2500, 3750],
@@ -83,7 +83,7 @@
       route: '浅草 → 月島',
       desc: '商店街を抜けて大通りへ。車はウィンカーを出して車線変更してくる。',
       length: 6500,
-      slack: 2,
+      slack: 1.5,
       hitPenalty: 0.5,
       taPenalty: 3,
       checkpoints: [1500, 3400, 4900],
@@ -106,7 +106,7 @@
       route: '月島 → 葛西',
       desc: '首都高の湾岸線でタイムセールへ！車はウィンカーなしで急に割り込んでくる。',
       length: 7000,
-      slack: 2,
+      slack: 1.5,
       hitPenalty: 0.5,
       taPenalty: 3,
       checkpoints: [1250, 3200, 5000],

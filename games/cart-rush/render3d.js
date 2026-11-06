@@ -742,6 +742,7 @@
       m.userData.legs[1].rotation.x = -sw;
     }
     if (o.kind === 'cat') m.rotation.y = o.vx < 0 ? Math.PI : 0;
+    if (o.kind === 'barrier' || o.kind === 'bar') Mo.setWarn(m, Math.floor(t * 4 + o.seed * 2) % 2 === 0);
     if (o.kind === 'car' || o.kind === 'truck' || o.kind === 'bus') Mo.setBlink(m, o.blinkDir, Math.floor(t * 5) % 2 === 0);
     if (o.hit) {
       const k = Math.exp(-o.wob * 3);

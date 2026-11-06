@@ -90,6 +90,13 @@
     },
   };
 
+  // ステージごとのBGM
+  const SONGS = {
+    market: { bpm: 150, root: 64, prog: [0, 5, 7, 5] },
+    home: { bpm: 158, root: 62, prog: [0, -3, 5, 7] },
+    rush: { bpm: 168, root: 57, prog: [0, -4, -2, -5], minor: true },
+  };
+
   // ---------- 乱数 ----------
   function mulberry32(a) {
     return function () {
@@ -194,26 +201,33 @@
   function airTime(vy) {
     return (vy + Math.sqrt(vy * vy + 2 * JUMP.gravity * JUMP.ramp.h)) / JUMP.gravity;
   }
-  function addRamp(x, z, th) {
-    if (z < 40 || z > G.stage.length - 40) return;
+  // 置き型のジャンプ台。chain: 続けて置く台の数（0〜2、省略時はランダム）
+  // 戻り値: 最後の台から飛んで着地するあたりの z（置けなかったら null）
+  function addRamp(x, z, th, chain) {
+    if (z < 40 || z > G.stage.length - 40) return null;
     // 後ろから走ってくる車が止まりきれない距離（約90m）まで見て、車がいれば置かない
-    if (laneBlocked(x, z - 90, z + JUMP.ramp.len + 15, null)) return;
+    if (laneBlocked(x, z - 90, z + JUMP.ramp.len + 15, null)) return null;
     G.ramps.push(makeRamp(x, z));
     let cx = x;
     let cz = z + JUMP.ramp.len;
-    for (let lv = 0; lv < 2; lv++) {
-      if (G.rng() > 0.55 - lv * 0.15) break;
+    const n = chain === undefined ? (G.rng() < 0.55 ? 1 + (G.rng() < 0.3 ? 1 : 0) : 0) : chain;
+    let lv = 0;
+    for (; lv < n; lv++) {
       // 飛び出し地点から「その段階の速度 × 滞空時間」先が着地点。
       // 降りてきたところで坂の中ほどに乗れるよう、着地点の少し手前に台の始まりを置く
       const air = airTime(JUMP.launchVy + JUMP.chainVy * lv);
-      cz += th.maxSpeed * JUMP.levels[lv] * 0.97 * air - JUMP.ramp.len * 0.65;
-      cx = clamp(cx + (G.rng() < 0.5 ? -1 : 1) * (0.8 + G.rng() * 1.2), -th.limit + 0.5, th.limit - 0.5);
-      const zt = THEMES[zoneAt(G.stage, cz).type];
-      if (zt.lanes) cx = laneOf(cx, zt.lanes); // 車線のある道では車線の真ん中に置く
-      if (cz > G.stage.length - 40) break;
+      const next = cz + th.maxSpeed * JUMP.levels[lv] * 0.97 * air - JUMP.ramp.len * 0.65;
+      let nx = clamp(cx + (G.rng() < 0.5 ? -1 : 1) * (0.8 + G.rng() * 1.2), -th.limit + 0.5, th.limit - 0.5);
+      const zt = THEMES[zoneAt(G.stage, next).type];
+      if (zt.lanes) nx = laneOf(nx, zt.lanes); // 車線のある道では車線の真ん中に置く
+      if (next > G.stage.length - 40 || laneBlocked(nx, next - 90, next + JUMP.ramp.len + 15, null)) break;
+      cx = nx;
+      cz = next;
       G.ramps.push(makeRamp(cx, cz));
       cz += JUMP.ramp.len;
     }
+    const air = airTime(JUMP.launchVy + JUMP.chainVy * lv);
+    return cz + th.maxSpeed * JUMP.levels[Math.min(lv, JUMP.levels.length - 1)] * air;
   }
 
   // 車・トラック。ステージ設定によっては、プレイヤーが近づいたところで隣の車線へ移る
@@ -365,77 +379,160 @@
     r.z = (r.z0 + r.z1) / 2;
   }
 
-  // 1列ぶんの障害物を置き、次の列までの間隔を返す。
-  // 列の間隔は「最高速で何秒後に次の列が来るか」で決める（速いほど距離も開くが、判断の猶予は短くなる）
+  // ---------- 障害物の配置（場面の流れで組み立てる） ----------
+  // 1種類ずつランダムに並べるのではなく、「ラッシュ」「ジャンプ台ゾーン」「ぶっ飛ばしゾーン」「関門」「休憩」を
+  // 交互に出して、詰まる → 抜ける → 飛ぶ の緩急をつくる。距離は「最高速で何秒か」で決める。
+  const PATTERNS = {
+    wave: { w: 3, label: 'ラッシュ' },
+    ramps: { w: 5, label: 'ジャンプ台ゾーン' },
+    smash: { w: 2, label: 'ぶっ飛ばしゾーン' },
+    gate: { w: 2, label: '関門' },
+    rest: { w: 1.2, label: '休憩' },
+  };
+  function zoneLanes(zone, th) {
+    if (th.lanes) return th.lanes;
+    if (zone.type === 'market') return [-2.2, -1.1, 0, 1.1, 2.2];
+    return [-2.0, -1.0, 0, 1.0, 2.0];
+  }
+  function nextPattern() {
+    const rng = G.rng;
+    const table = {};
+    for (const k in PATTERNS) if (k !== G.lastPattern) table[k] = PATTERNS[k].w;
+    const type = G.lastPattern ? pickWeighted(rng, table) : 'rest';
+    G.lastPattern = type;
+    const lv = G.stage.level;
+    const rows = { wave: 5 + Math.floor(rng() * 3) + lv, ramps: 1, smash: 4 + Math.floor(rng() * 3), gate: 1 + (rng() < 0.4 ? 1 : 0), rest: 2 }[type];
+    G.pat = { type, rows, free: null };
+  }
+
+  // 1つの障害物を置く（場所の種類ごとに中身を選ぶ）
+  function placeBlocker(zone, th, x, z, diff) {
+    const rng = G.rng;
+    if (zone.type === 'market') {
+      const kind = pickWeighted(rng, { shopper: 36, cart: 18, display: 16, boxes: 18 });
+      if (kind === 'shopper') {
+        const moving = rng() < 0.15 + diff * 0.25;
+        return addOb('shopper', x, z, Object.assign(person(rng), { basket: rng() < 0.6, vx: moving ? (rng() < 0.5 ? -1 : 1) * (0.6 + rng() * 0.7) : 0, bounce: 2.5 }));
+      }
+      return addOb(kind, clamp(x, -2.0, 2.0), z);
+    }
+    if (zone.type === 'shotengai') {
+      const kind = pickWeighted(rng, { shopper: 34, bike: 20, boxes: 16, cart: 10, cat: 6 });
+      if (kind === 'shopper') {
+        const moving = rng() < 0.2 + diff * 0.3;
+        return addOb('shopper', x, z, Object.assign(person(rng), { basket: rng() < 0.5, vx: moving ? (rng() < 0.5 ? -1 : 1) * (0.7 + rng() * 0.8) : 0, bounce: 2.4 }));
+      }
+      if (kind === 'bike') return addOb('bike', x, z, Object.assign(person(rng), { vz: 6 + rng() * 5 }));
+      if (kind === 'cat') {
+        const from = rng() < 0.5 ? -1 : 1;
+        return addOb('cat', from * (th.roadW + 0.5), z, { vx: -from * (2.4 + rng() * 0.8), trigger: 120, active: false });
+      }
+      return addOb(kind, clamp(x, -2.0, 2.0), z);
+    }
+    const fast = zone.type === 'expressway';
+    const kind = pickWeighted(rng, fast ? { car: 55, truck: 28, bus: 9, barrier: 8 } : { car: 48, bus: 16, truck: 16, barrier: 20 });
+    if (kind === 'car') return addVehicle('car', x, z, th, fast ? 60 + rng() * 20 : 45 + rng() * 20);
+    if (kind === 'truck') return addVehicle('truck', x, z, th, fast ? 55 + rng() * 10 : 40 + rng() * 15);
+    if (kind === 'bus') return addVehicle('bus', x, z, th, fast ? 50 + rng() * 10 : 35 + rng() * 10);
+    return addOb('barrier', x, z);
+  }
+  // はね飛ばせる軽い物
+  function placeLight(zone, x, z) {
+    const kind = zone.type === 'market' ? 'wetsign' : zone.type === 'shotengai' ? 'kanban' : G.rng() < 0.7 ? 'cone' : 'kanban';
+    return addOb(kind, x, z);
+  }
+  // 道幅いっぱいの関門（ジャンプかスライディングで越える）
+  function placeGate(zone, th, z) {
+    if (zone.type === 'market') {
+      for (const x of [-1.55, 1.55]) addOb('banner', x, z);
+    } else if (zone.type === 'shotengai') {
+      for (const x of [-1.5, 1.5]) addOb('noren', x, z);
+    } else {
+      for (const x of th.lanes) addOb('bar', x, z);
+    }
+  }
+
+  // パターンを1行ぶん進めて、次の行までの距離を返す
   function spawnRow(z) {
     const rng = G.rng;
     const zone = zoneAt(G.stage, z);
     const th = THEMES[zone.type];
     const diff = clamp(z / G.stage.length, 0, 1);
-    const gapSec = lerp(0.85, 0.55, diff) + rng() * 0.2;
-    const rampChance = 0.22 + diff * 0.08;
+    const lv = G.stage.level;
+    const sp = th.maxSpeed;
+    const lanes = zoneLanes(zone, th);
+    if (!G.pat || G.pat.rows <= 0) nextPattern();
+    const pat = G.pat;
+    pat.rows--;
+    // 空ける車線: 前の行から1つずつずらす（スラローム）
+    const moveFree = () => {
+      if (pat.free === null || pat.free >= lanes.length) pat.free = Math.floor(rng() * lanes.length);
+      else pat.free = clamp(pat.free + (rng() < 0.5 ? -1 : 1), 0, lanes.length - 1);
+      return pat.free;
+    };
 
-    if (zone.type === 'market') {
-      // いちばんやさしいステージ: 列の間隔を広めに、1列あたりの数を少なめに
-      const lanes = shuffle(rng, [-2.2, -1.1, 0, 1.1, 2.2]);
-      const n = 1 + (rng() < 0.25 + diff * 0.35 ? 1 : 0) + (diff > 0.6 && rng() < 0.2 ? 1 : 0);
-      for (let k = 0; k < n; k++) {
-        const x = lanes[k] + (rng() - 0.5) * 0.3;
-        const kind = pickWeighted(rng, { shopper: 34, cart: 16, display: 13, boxes: 15, wetsign: 14, banner: diff > 0.15 ? 8 : 0 });
-        const oz = z + rng() * 2;
-        if (kind === 'shopper') {
-          const moving = rng() < 0.2 + diff * 0.25;
-          addOb('shopper', x, oz, Object.assign(person(rng), { basket: rng() < 0.6, vx: moving ? (rng() < 0.5 ? -1 : 1) * (0.6 + rng() * 0.7) : 0, bounce: 2.5 }));
-        } else if (kind === 'display' || kind === 'boxes' || kind === 'banner') {
-          addOb(kind, clamp(x, -2.0, 2.0), oz);
-        } else addOb(kind, x, oz);
+    if (pat.type === 'wave') {
+      const free = moveFree();
+      // ふさぐ数: 5車線の場所は2〜3、3車線の道は1〜2（後半・高いステージほど多い）
+      const many = lanes.length >= 5 ? 2 + (rng() < 0.25 + diff * 0.3 + lv * 0.1 ? 1 : 0) : 1 + (rng() < 0.35 + diff * 0.3 + lv * 0.08 ? 1 : 0);
+      const others = shuffle(rng, lanes.map((_, i) => i).filter((i) => i !== free)).slice(0, many);
+      for (const i of others) {
+        if (rng() < 0.25) placeLight(zone, lanes[i], z);
+        else placeBlocker(zone, th, lanes[i] + (th.lanes ? 0 : (rng() - 0.5) * 0.3), z + rng() * 1.5, diff);
       }
-      const free = lanes[n] !== undefined ? lanes[n] : 0;
-      if (rng() < rampChance) addRamp(free, z - th.maxSpeed * 0.35, th);
-      return th.maxSpeed * (lerp(1.0, 0.7, diff) + rng() * 0.2);
-    }
-
-    if (zone.type === 'shotengai') {
-      // 商店街: 歩行者・自転車・立て看板・のれん
-      const lanes = shuffle(rng, [-2.0, -1.0, 0, 1.0, 2.0]);
-      const n = 1 + (rng() < 0.3 + diff * 0.4 ? 1 : 0);
-      for (let k = 0; k < n; k++) {
-        const x = lanes[k];
-        const kind = pickWeighted(rng, { shopper: 30, bike: 14, kanban: 16, noren: 10, boxes: 10, cart: 6, cat: 6 });
-        if (kind === 'shopper') {
-          const moving = rng() < 0.25 + diff * 0.3;
-          addOb('shopper', x, z, Object.assign(person(rng), { basket: rng() < 0.5, vx: moving ? (rng() < 0.5 ? -1 : 1) * (0.7 + rng() * 0.8) : 0, bounce: 2.4 }));
-        } else if (kind === 'bike') addOb('bike', x, z, Object.assign(person(rng), { vz: 6 + rng() * 5 }));
-        else if (kind === 'noren') addOb('noren', clamp(x, -1.6, 1.6), z);
-        else if (kind === 'cat') {
-          const from = rng() < 0.5 ? -1 : 1;
-          addOb('cat', from * (th.roadW + 0.5), z, { vx: -from * (2.4 + rng() * 0.8), trigger: 120, active: false });
-        } else addOb(kind, clamp(x, -2.0, 2.0), z);
+      // ラッシュの最後に、抜けた先の車線へジャンプ台
+      if (pat.rows === 0 && rng() < 0.85) {
+        const end = addRamp(lanes[free], z + sp * 0.35, th, rng() < 0.5 ? 1 : 0);
+        if (end) return end - z + sp * 0.25;
       }
-      const free = lanes[n] !== undefined ? lanes[n] : 0;
-      if (rng() < rampChance) addRamp(free, z - th.maxSpeed * 0.35, th);
-      return th.maxSpeed * gapSec;
+      return sp * (lerp(0.62, 0.46, diff) - lv * 0.02 + rng() * 0.08);
     }
 
-    // 大通り・橋・首都高: 車線ごとに車・バス・トラック、工事
-    const lanes = shuffle(rng, th.lanes.slice());
-    const n = 1 + (rng() < 0.4 + diff * 0.35 ? 1 : 0);
-    const fast = zone.type === 'expressway';
-    for (let k = 0; k < n; k++) {
-      const x = lanes[k];
-      const table = fast ? { car: 46, truck: 24, bus: 8, cone: 22 } : { car: 38, bus: 14, truck: 14, cone: 12, barrier: 8, bar: 8, kanban: 6 };
-      const kind = pickWeighted(rng, table);
-      if (kind === 'car') addVehicle('car', x, z, th, fast ? 60 + rng() * 20 : 45 + rng() * 20);
-      else if (kind === 'truck') addVehicle('truck', x, z, th, fast ? 55 + rng() * 10 : 40 + rng() * 15);
-      else if (kind === 'bus') addVehicle('bus', x, z, th, fast ? 50 + rng() * 10 : 35 + rng() * 10);
-      else if (kind === 'cone') {
-        const dir = rng() < 0.5 ? -1 : 1;
-        for (let c = 0; c < 4; c++) addOb('cone', x - dir * 1.1 + dir * c * 0.7, z + c * 3.5);
-      } else addOb(kind, x, z);
+    if (pat.type === 'ramps') {
+      // ジャンプ台の連続（2〜3段）。飛んでいる下には軽い物や車を置いて、飛び越える気持ちよさを出す
+      const free = moveFree();
+      const chain = rng() < 0.35 + diff * 0.3 ? 2 : 1;
+      const end = addRamp(lanes[free], z, th, chain);
+      if (!end) return sp * 0.5;
+      for (let zz = z + 25; zz < end - 10; zz += sp * 0.22) {
+        const i = Math.floor(rng() * lanes.length);
+        if (rng() < 0.5) placeLight(zone, lanes[i], zz);
+        else if (th.lanes && rng() < 0.5) placeBlocker(zone, th, lanes[i], zz, diff);
+      }
+      return end - z + sp * 0.3;
     }
-    const free = lanes[n] !== undefined ? lanes[n] : 0;
-    if (rng() < rampChance) addRamp(free, z - th.maxSpeed * 0.35, th);
-    return th.maxSpeed * gapSec;
+
+    if (pat.type === 'smash') {
+      // はね飛ばし放題（ゲージがたまる）。たまに大物を混ぜる
+      const free = moveFree();
+      for (let i = 0; i < lanes.length; i++) {
+        if (i === free && rng() < 0.5) continue;
+        if (rng() < 0.75) placeLight(zone, lanes[i] + (rng() - 0.5) * 0.4, z + rng() * 3);
+      }
+      if (rng() < 0.25 + diff * 0.2) placeBlocker(zone, th, lanes[(free + 2) % lanes.length], z + 6, diff);
+      // ぶっ飛ばしの締めにジャンプ台
+      if (pat.rows === 0 && rng() < 0.6) {
+        const end = addRamp(lanes[free], z + sp * 0.3, th, rng() < 0.4 ? 1 : 0);
+        if (end) return end - z + sp * 0.2;
+      }
+      return sp * (0.32 + rng() * 0.06);
+    }
+
+    if (pat.type === 'gate') {
+      placeGate(zone, th, z);
+      // 関門の前後に1つずつ障害物
+      const i = Math.floor(rng() * lanes.length);
+      placeBlocker(zone, th, lanes[i], z + sp * 0.3, diff);
+      return sp * 0.65;
+    }
+
+    // rest: ひと息（軽い物をぽつぽつ。最後はジャンプ台で次の場面へ）
+    placeLight(zone, lanes[Math.floor(rng() * lanes.length)], z);
+    if (pat.rows === 0) {
+      const end = addRamp(lanes[Math.floor(rng() * lanes.length)], z + sp * 0.5, th, 0);
+      if (end) return end - z;
+    }
+    return sp * (0.8 + rng() * 0.2);
   }
 
   function spawnAhead() {
@@ -443,7 +540,7 @@
     while (G.nextSpawn < G.player.z + DRAW && G.nextSpawn < st.length - 18) {
       const z = G.nextSpawn;
       const nearCp = st.checkpoints.some((c) => Math.abs(z - c) < 9);
-      G.nextSpawn += nearCp ? 4 : spawnRow(z);
+      G.nextSpawn += nearCp ? 10 : Math.max(8, spawnRow(z));
     }
   }
 
@@ -539,6 +636,7 @@
   }
 
   function goMenu() {
+    audio.stopMusic();
     G.runId = (G.runId || 0) + 1;
     G.state = 'menu';
     G.stage = STAGES[0];
@@ -574,6 +672,8 @@
       floaters: [],
       nextSpawn: 60,
       boost: 0,
+      pat: null,
+      lastPattern: null,
       jumps: 0,
       maxChain: 0,
       boostLevel: 0,
@@ -696,7 +796,7 @@
     const type = G.chain === 1 ? TRICKS[Math.floor(Math.random() * TRICKS.length)] : G.chain === 2 ? 'cork' : 'flip';
     P.trick = { type, t: 0, dur: airTime(P.vy) * 0.92, turns: G.chain >= 3 ? 2 : 1, dir: Math.random() < 0.5 ? -1 : 1 };
     sfx.jump(G.chain);
-    if (r.attach) addGauge(SALE.gain.truckRamp);
+    addGauge(r.attach ? SALE.gain.truckRamp : SALE.gain.ramp);
     haptics.vibrate(chained ? [20, 30, 40] : 35);
   }
 
@@ -819,6 +919,7 @@
     P.slide = 0;
     P.jumpBuf = 0;
     sfx.hop();
+    addGauge(SALE.gain.hop);
   }
   function doSlide() {
     const P = G.player;
@@ -873,6 +974,7 @@
     G.endTimer = 2.4;
     G.player.onRamp = null;
     G.boost = 0;
+    audio.stopMusic();
     sfx.goal();
     Render.requestSnapshot();
     haptics.vibrate([40, 60, 40, 60, 80]);
@@ -886,6 +988,7 @@
     G.endTimer = 1.8;
     G.player.onRamp = null;
     G.boost = 0;
+    audio.stopMusic();
     sfx.over();
     Render.requestSnapshot();
     haptics.vibrate(300);
@@ -918,6 +1021,7 @@
       }
       if (G.countdown <= 0) {
         G.state = 'run';
+        audio.playMusic(SONGS[G.stage.id] || SONGS.market);
         $('drag-hint').classList.add('hidden');
         banner('GO!', 'go');
         sfx.go();
@@ -1011,6 +1115,7 @@
         }
       }
     }
+    audio.setHype(G.sale > 0);
     if (G.sale > 0) {
       G.sale = Math.max(0, G.sale - dt);
       G.gauge = (100 * G.sale) / SALE.duration;
@@ -1422,11 +1527,13 @@
     if (!['run', 'countdown'].includes(G.state)) return;
     G.prevState = G.state;
     G.state = 'paused';
+    audio.stopMusic();
     showScreen('pause');
   }
   function resume() {
     if (G.state !== 'paused') return;
     G.state = G.prevState;
+    if (G.state === 'run') audio.playMusic(SONGS[G.stage.id] || SONGS.market);
     showScreen(null);
   }
 

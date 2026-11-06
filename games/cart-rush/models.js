@@ -404,10 +404,11 @@
       g.fill();
     }
   });
-  const stripeBarrierTex = canvasTex('barrier', 256, 64, (g, w, h) => {
-    g.fillStyle = '#ffd31a';
+  // 通行止め・バーの模様（赤白のしま＋黒いふち。昼の明るい道路でも目立つように）
+  const stripeBarrierTex = canvasTex('barrier2', 256, 64, (g, w, h) => {
+    g.fillStyle = '#ffffff';
     g.fillRect(0, 0, w, h);
-    g.fillStyle = '#2b2d42';
+    g.fillStyle = '#e8262d';
     for (let x = -h; x < w + h; x += 48) {
       g.beginPath();
       g.moveTo(x, h);
@@ -417,6 +418,9 @@
       g.closePath();
       g.fill();
     }
+    g.strokeStyle = '#1d1f2e';
+    g.lineWidth = 6;
+    g.strokeRect(3, 3, w - 6, h - 6);
   });
   const glowTex = canvasTex('glow', 64, 64, (g, w, h) => {
     const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
@@ -805,11 +809,12 @@
       box(g, 0.14, 1.35, 0.14, s * (o.w + 0.05), 0.68, 0, '#e8e8e8');
       box(g, 0.4, 0.08, 0.4, s * (o.w + 0.05), 0.04, 0, '#666666');
     }
-    const bar = new T.Mesh(GEO.box, [M('#c9a200'), M('#c9a200'), M('#e0b800'), M('#c9a200'), new T.MeshLambertMaterial({ map: stripeBarrierTex }), new T.MeshLambertMaterial({ map: stripeBarrierTex })]);
-    bar.scale.set(w + 0.1, 0.3, 0.1);
+    const stripe = new T.MeshBasicMaterial({ map: stripeBarrierTex });
+    const bar = new T.Mesh(GEO.box, [M('#b81d23'), M('#b81d23'), M('#ffffff'), M('#b81d23'), stripe, stripe]);
+    bar.scale.set(w + 0.1, 0.34, 0.1);
     bar.position.set(0, 1.18, 0);
     g.add(bar);
-    for (const s of [-1, 1]) ball(g, 0.08, s * (o.w + 0.05), 1.42, 0, MB('#ff3b3b'));
+    addWarnLamps(g, [-(o.w + 0.05), o.w + 0.05], 1.55);
     return g;
   }
   // のれん・横断幕（スライディングでくぐる）
@@ -845,12 +850,34 @@
       box(g, 0.08, 0.9, 0.08, s * 0.85, 0.45, 0, '#666666');
       box(g, 0.08, 0.06, 0.6, s * 0.85, 0.03, 0, '#666666');
     }
-    const panel = new T.Mesh(GEO.box, [M('#c9a200'), M('#c9a200'), M('#e0b800'), M('#c9a200'), new T.MeshLambertMaterial({ map: stripeBarrierTex }), M('#c9a200')]);
-    panel.scale.set(2.0, 0.5, 0.12);
-    panel.position.set(0, 0.62, 0);
+    const stripe = new T.MeshBasicMaterial({ map: stripeBarrierTex });
+    const panel = new T.Mesh(GEO.box, [M('#b81d23'), M('#b81d23'), M('#ffffff'), M('#b81d23'), stripe, stripe]);
+    panel.scale.set(2.0, 0.55, 0.12);
+    panel.position.set(0, 0.65, 0);
     g.add(panel);
-    ball(g, 0.1, 0, 1.0, 0, MB('#ff8c1a'));
+    addWarnLamps(g, [-0.75, 0.75], 1.05);
     return g;
+  }
+  // 点滅する警告ランプ（遠くからでも見えるよう、画面上で一定の大きさの光も付ける）
+  const warnFlareMat = new T.SpriteMaterial({ map: glowTex, color: 0xff3a1a, transparent: true, depthWrite: false, sizeAttenuation: false });
+  function addWarnLamps(g, xs, y) {
+    const lamps = [];
+    for (const x of xs) {
+      cyl(g, 0.02, y - 0.6, x, (y + 0.6) / 2, 0, '#555555');
+      const lamp = ball(g, 0.11, x, y, 0, MB('#ff5a1f'));
+      const flare = new T.Sprite(warnFlareMat);
+      flare.scale.set(0.05, 0.05, 1);
+      flare.position.set(x, y, 0.15);
+      g.add(flare);
+      lamps.push({ lamp, flare });
+    }
+    g.userData.warn = lamps;
+  }
+  function setWarn(g, on) {
+    for (const l of g.userData.warn || []) {
+      l.flare.visible = on;
+      l.lamp.material = on ? MB('#ffb21f') : MB('#8a2a10');
+    }
   }
   function buildDisplay() {
     const g = new T.Group();
@@ -1051,6 +1078,7 @@
     buildBus,
     buildKanban,
     buildBar,
+    setWarn,
     buildNoren,
     setBlink,
     buildCone,
