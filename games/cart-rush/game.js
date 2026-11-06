@@ -1170,10 +1170,11 @@
       P.vx = (P.x - prevX) / Math.max(dt, 1e-4);
 
       const mul = Math.max(G.boost > 0 ? JUMP.levels[G.boostLevel - 1] : 1, G.sale > 0 ? SALE.speedMul : 1);
-      const top = th.maxSpeed * mul;
+      // 歩道では最高速度が落ちる（ガタガタ道。車道に戻るとすぐ加速）
+      const top = th.maxSpeed * mul * (P.walk && G.sale <= 0 ? MOVE.sidewalkSpeed : 1);
       const acc = (mul > 1 ? th.accel * 3 : th.accel) * (P.stumble > 0 ? 0.45 : 1);
       if (P.speed < top) P.speed = Math.min(top, P.speed + acc * dt);
-      else P.speed = Math.max(top, P.speed - 14 * dt);
+      else P.speed = Math.max(top, P.speed - (P.walk ? 45 : 14) * dt);
     } else if (G.state === 'goal' || G.state === 'over') {
       P.speed = Math.max(0, P.speed - 10 * dt);
       P.vx *= 0.9;
