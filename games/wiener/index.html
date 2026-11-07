@@ -21,10 +21,6 @@
 
       <!-- 上の表示 -->
       <div class="top">
-        <div class="meter">
-          <span class="lbl">皮のハリ</span>
-          <div class="bar"><div id="tension-fill" class="fill"></div><i class="mark"></i></div>
-        </div>
         <div class="info">
           <span>中 <b id="core" class="val">冷たい</b></span>
           <span id="water-n"></span>
@@ -34,13 +30,21 @@
 
       <!-- 操作 -->
       <div class="controls">
-        <div class="knob">
-          <span>火加減</span>
-          <input id="heat" type="range" min="0" max="1" step="0.01" value="0" />
-          <b id="heat-label">消火</b>
+        <!-- ガスコンロのつまみ -->
+        <div class="stove">
+          <div id="knob" class="knob" aria-label="火加減のつまみ">
+            <span class="tick t0">消</span>
+            <span class="tick t1">弱</span>
+            <span class="tick t2">中</span>
+            <span class="tick t3">強</span>
+            <div id="knob-dial" class="dial"><i></i></div>
+          </div>
+          <div class="knob-info">
+            <b id="heat-label" class="off">消</b>
+            <small>つまみを回して火加減</small>
+          </div>
         </div>
-        <div class="ctl-row">
-          <button id="btn-water" class="ctl" type="button">💧 水を入れる</button>
+        <div class="ctl-col">
           <button id="btn-roll" class="ctl" type="button">🔄 転がす</button>
           <button id="btn-serve" class="ctl serve" type="button">🍽 お皿へ</button>
         </div>
@@ -51,7 +55,7 @@
         <div class="card-panel">
           <p class="eyebrow">破裂させずに、パリッと焼け</p>
           <h1 class="logo">ウインナー焼き</h1>
-          <p class="lead">火加減と水で、皮が<b>パンパンに張る寸前</b>まで攻めろ。<br />破裂したら即終了。</p>
+          <p class="lead">粗挽きウインナーを、ガスの火加減とビーカーの水で、皮が<b>パンパンに張る寸前</b>まで攻めろ。破裂したら即終了。</p>
           <p id="title-best" class="best"></p>
           <div class="btn-col">
             <button id="btn-start" class="btn btn-primary">焼きはじめる</button>
@@ -68,14 +72,14 @@
       <section id="screen-howto" class="screen hidden">
         <div class="card-panel howto">
           <h2>あそびかた</h2>
-          <h3>火加減</h3>
-          <p>強いほど早く焼けますが、中が急に熱くなると蒸気で皮がパンパンになり、<b>耐えきれないと破裂</b>（即終了）。</p>
-          <h3>水を入れる</h3>
-          <p>水があるあいだは100℃くらいの蒸し焼きになり、中まで穏やかに火が通ります。焼き色は付きません。水が飛んだら焼き色を付けよう。</p>
+          <h3>火加減（ガスコンロのつまみ）</h3>
+          <p>つまみを時計回りに回すと点火、さらに回すほど強火。強いほど早く焼けますが、中が急に熱くなると蒸気で皮がパンパンになり、<b>耐えきれないと破裂</b>（即終了）。</p>
+          <h3>水（ビーカー）</h3>
+          <p>右上のビーカーを<b>おしている間だけ注げます</b>。目盛りは10mlごと。入れた量と「大さじ◯杯くらい」の目安が出ます（1本なら大さじ2〜3杯＝30〜45mlくらいが目安）。水があるあいだは100℃くらいの蒸し焼きで、中まで穏やかに火が通ります。焼き色は水が飛んでから。</p>
           <h3>転がす</h3>
           <p>ウインナーをタップ（または「転がす」）で90度ずつ回ります。下の面に焼き色が付くので、全面そろえよう。</p>
           <h3>お皿へ</h3>
-          <p>焼き上がったと思ったら盛り付け。<b>中まで火が通っているか・焼き色・ムラ・ジューシーさ・パンパン具合</b>で採点。皮のハリが限界の寸前ほど高得点。「ピチッ」と鳴り出したら危険信号。</p>
+          <p>焼き上がったと思ったら盛り付け。<b>中まで火が通っているか・焼き色・ムラ・ジューシーさ・パンパン具合</b>で採点。破裂寸前ほど高得点。<br><b>破裂のサイン</b>：ふくらんで反りが強くなる → 表面がボコボコ浮き出てテカテカ → 肉汁の玉がにじむ → 細いひびが走る → ブルブル震えて「ピチッ」。</p>
           <button class="btn btn-primary" data-close="howto">とじる</button>
         </div>
       </section>

@@ -6,8 +6,8 @@
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const lerp = (a, b, t) => a + (b - a) * t;
 
-  const LEN = 10; // ウインナーの長さ
-  const RAD = 1.15; // 太さ（半径）
+  const LEN = 11.5; // ウインナーの長さ（細めで長い、粗挽きタイプ）
+  const RAD = 0.98; // 太さ（半径）
   const BINS = 12; // 焼き色を記録する周方向の区切り
 
   let renderer;
@@ -176,15 +176,23 @@
     makeSausage();
   }
 
-  // ウインナーの形（両端が丸く、少しだけ曲がっている）
+  // ウインナーの形: 天然の羊腸に詰めた細長い粗挽き。ゆるく反っていて、両端は皮がねじれてすぼまる
+  let cracks = [];
+  let beads = [];
   function makeSausage() {
     const prof = [];
-    const N = 40;
+    const N = 64;
+    const KNOT = 0.35; // 端のねじれ（小さなこぶ）の長さ
     for (let i = 0; i <= N; i++) {
       const t = i / N;
       const x = (t - 0.5) * LEN;
       const e = Math.min(t, 1 - t) * LEN; // 端からの距離
-      const r = e < RAD ? Math.sqrt(Math.max(0, RAD * RAD - (RAD - e) * (RAD - e))) : RAD;
+      let r;
+      if (e < KNOT) r = 0.12 + 0.1 * Math.sin((e / KNOT) * Math.PI); // ねじれた先
+      else {
+        const k = (e - KNOT) / 1.1; // 端の丸み
+        r = k < 1 ? 0.22 + (RAD - 0.22) * Math.sin((k * Math.PI) / 2) : RAD;
+      }
       prof.push([x, r]);
     }
     const SEG = 48;
@@ -195,7 +203,7 @@
       for (let j = 0; j <= SEG; j++) {
         const a = (j / SEG) * Math.PI * 2;
         pos.push(prof[i][0], Math.sin(a) * prof[i][1], Math.cos(a) * prof[i][1]);
-        uv.push(i / N, j / SEG);
+        uv.push((i / N) * 2, j / SEG);
       }
     for (let i = 0; i < N; i++)
       for (let j = 0; j < SEG; j++) {
@@ -208,38 +216,60 @@
     sGeo.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
     sGeo.setAttribute('color', new T.Float32BufferAttribute(new Float32Array(pos.length), 3));
     sGeo.setIndex(idx);
-    sGeo.userData = { N, SEG, base: Float32Array.from(pos), prof };
-    // 皮の細かい模様（肉の粒・しわ）
-    const skin = canvasTex(256, 128, (g, w, h) => {
-      g.fillStyle = '#ffffff';
+    // 皮の表面の小さなでこぼこ（パンパンになると浮き出る）
+    const bump = new Float32Array((N + 1) * (SEG + 1));
+    for (let i = 0; i < bump.length; i++) bump[i] = Math.random();
+    for (let pass = 0; pass < 3; pass++)
+      for (let i = 1; i < N; i++)
+        for (let j = 0; j <= SEG; j++) {
+          const k = i * (SEG + 1) + j;
+          bump[k] = (bump[k] * 2 + bump[k - SEG - 1] + bump[k + SEG + 1] + bump[i * (SEG + 1) + ((j + 1) % (SEG + 1))]) / 5;
+        }
+    sGeo.userData = { N, SEG, base: Float32Array.from(pos), prof, bump };
+    // 粗挽き肉が透けて見える皮（ピンク〜サーモン色に、白い脂と赤身の粒）
+    const skin = canvasTex(512, 128, (g, w, h) => {
+      g.fillStyle = '#e7a593';
       g.fillRect(0, 0, w, h);
-      for (let i = 0; i < 900; i++) {
-        g.fillStyle = `rgba(${Math.random() < 0.5 ? '255,240,232' : '215,175,155'},${0.08 + Math.random() * 0.12})`;
+      for (let i = 0; i < 1400; i++) {
+        const fat = Math.random() < 0.45;
+        g.fillStyle = fat ? `rgba(250,232,222,${0.35 + Math.random() * 0.35})` : `rgba(${170 + Math.random() * 30},${80 + Math.random() * 30},${70 + Math.random() * 20},${0.25 + Math.random() * 0.3})`;
         g.beginPath();
-        g.ellipse(Math.random() * w, Math.random() * h, 1 + Math.random() * 3, 1 + Math.random() * 2, 0, 0, 7);
+        g.ellipse(Math.random() * w, Math.random() * h, 1 + Math.random() * 3.5, 0.8 + Math.random() * 2, Math.random() * 3, 0, 7);
         g.fill();
       }
-      for (let i = 0; i < 40; i++) {
-        g.strokeStyle = 'rgba(160,110,90,0.18)';
+      // 皮のうすいしわ（長さ方向）
+      for (let i = 0; i < 26; i++) {
+        g.strokeStyle = 'rgba(255,255,255,0.12)';
+        g.lineWidth = 1;
         g.beginPath();
         const y = Math.random() * h;
         g.moveTo(0, y);
-        g.bezierCurveTo(w * 0.3, y + 4, w * 0.6, y - 4, w, y + 2);
+        g.bezierCurveTo(w * 0.3, y + 3, w * 0.6, y - 3, w, y + 1);
         g.stroke();
       }
     }, true);
-    sMat = new T.MeshPhysicalMaterial({ map: skin, vertexColors: true, roughness: 0.55, clearcoat: 0.2, clearcoatRoughness: 0.3, sheen: 0.3 });
+    sMat = new T.MeshPhysicalMaterial({ map: skin, vertexColors: true, roughness: 0.5, clearcoat: 0.25, clearcoatRoughness: 0.25, sheen: 0.4, sheenColor: new T.Color('#ffd9c8') });
     sausage = new T.Mesh(sGeo, sMat);
     sausage.castShadow = true;
     sausage.position.y = -2.3 + RAD;
     scene.add(sausage);
+    makeCracks();
+  }
+  // パンパンになったときに走る細いひび（長さ方向の筋）
+  function makeCracks() {
+    const { N, SEG } = sGeo.userData;
+    cracks = [];
+    for (let c = 0; c < 6; c++) {
+      const i0 = 10 + Math.floor(Math.random() * (N - 34));
+      cracks.push({ i0, i1: i0 + 6 + Math.floor(Math.random() * 14), j: Math.floor(Math.random() * SEG), wob: Math.random() * 6, at: 0.8 + Math.random() * 0.15 });
+    }
   }
 
-  // 焼き色: 生 → きつね色 → こんがり → 焦げ
-  const C0 = new T.Color('#e2a48c');
-  const C1 = new T.Color('#b86a30');
-  const C2 = new T.Color('#7a3a14');
-  const C3 = new T.Color('#2e180c');
+  // 焼き色（皮の色に掛け合わせる）: 生 → きつね色 → こんがり → 焦げ
+  const C0 = new T.Color('#ffffff');
+  const C1 = new T.Color('#a85c2a');
+  const C2 = new T.Color('#55240a');
+  const C3 = new T.Color('#1e0e05');
   function brownColor(b, out) {
     if (b < 0.5) out.copy(C0).lerp(C1, b / 0.5);
     else if (b < 0.9) out.copy(C1).lerp(C2, Math.min(1, (b - 0.5) / 0.35));
@@ -247,44 +277,89 @@
     return out;
   }
 
-  // state: { brown[BINS], roll, swell(0〜), tension(0〜1), gloss, burst }
+  // state: { brown[BINS], roll, swell(0〜), tension(0〜1), gloss, heatC(中の温度) }
+  // ゲージの代わりに、見た目で「破裂しそう」を伝える:
+  //   0.5〜 ふくらんで反りが強くなる / 0.6〜 表面がボコボコ浮き出てツヤが出る
+  //   0.7〜 肉汁の玉がにじむ / 0.8〜 細いひびが走る / 0.85〜 小刻みに震える
   const tmpC = new T.Color();
   function updateSausage(s) {
-    const { N, SEG, base, prof } = sGeo.userData;
+    const { N, SEG, base, prof, bump } = sGeo.userData;
     const pos = sGeo.attributes.position.array;
     const col = sGeo.attributes.color.array;
-    const sw = 1 + s.swell * 0.16; // 圧力で太る
-    const bend = 0.08 + s.swell * 0.03;
+    const t = clamp(s.tension, 0, 1.1);
+    const sw = 1 + Math.max(0, t - 0.25) * 0.34; // 圧力で太る
+    const bend = 0.22 + Math.max(0, t - 0.4) * 0.35; // 反りが強くなる
+    const lump = Math.max(0, t - 0.6) * 0.7; // でこぼこ
+    // 熱で赤みが増す
+    const warm = clamp((s.heatC - 40) / 60, 0, 1);
     for (let i = 0; i <= N; i++) {
       const x = prof[i][0];
-      const bendY = (1 - Math.pow((2 * x) / LEN, 2)) * bend * 2;
+      const bendY = (1 - Math.pow((2 * x) / LEN, 2)) * bend;
+      const inner = prof[i][1] > 0.5 ? 1 : prof[i][1] / 0.5; // 端のねじれは太らない
       for (let j = 0; j <= SEG; j++) {
-        const k = (i * (SEG + 1) + j) * 3;
+        const vi = i * (SEG + 1) + j;
+        const k = vi * 3;
         const a = (j / SEG) * Math.PI * 2;
-        pos[k] = base[k] * (1 + s.swell * 0.02);
-        pos[k + 1] = base[k + 1] * sw + bendY;
-        pos[k + 2] = base[k + 2] * sw;
-        // 焼き色（周方向の位置で補間）。両端は少し薄く
+        let r = 1 + (sw - 1) * inner + (bump[vi] - 0.5) * lump * inner;
+        // ひび: その筋のあたりは少しへこんで、中の肉が明るく見える
+        let crackK = 0;
+        for (const c of cracks) {
+          if (t < c.at || i < c.i0 || i > c.i1) continue;
+          const jj = c.j + Math.round(Math.sin(i * 0.9 + c.wob) * 1.2);
+          const d = Math.min(Math.abs(j - jj), SEG - Math.abs(j - jj));
+          if (d <= 2) crackK = Math.max(crackK, (1 - d * 0.4) * clamp((t - c.at) / 0.1, 0, 1));
+        }
+        r -= crackK * 0.09;
+        pos[k] = base[k] * (1 + Math.max(0, t - 0.25) * 0.03);
+        pos[k + 1] = base[k + 1] * r + bendY;
+        pos[k + 2] = base[k + 2] * r;
+        // 焼き色（周方向の位置で補間）。両端のねじれは少し薄く
         const f = ((a / (Math.PI * 2)) * BINS) % BINS;
         const i0 = Math.floor(f);
         const i1 = (i0 + 1) % BINS;
-        const t = f - i0;
-        const end = Math.min(i, N - i) / 6;
-        const b = lerp(s.brown[i0], s.brown[i1], t) * Math.min(1, 0.55 + end * 0.45);
+        const u = f - i0;
+        const end = Math.min(i, N - i) / 8;
+        const b = lerp(s.brown[i0], s.brown[i1], u) * Math.min(1, 0.5 + end * 0.5);
         brownColor(b, tmpC);
-        col[k] = tmpC.r * 0.82;
-        col[k + 1] = tmpC.g * 0.82;
-        col[k + 2] = tmpC.b * 0.82;
+        const rr = 1 + warm * 0.04;
+        const gg = 1 - warm * 0.05;
+        col[k] = lerp(tmpC.r * rr, 1.3, crackK * 0.85);
+        col[k + 1] = lerp(tmpC.g * gg, 1.05, crackK * 0.85);
+        col[k + 2] = lerp(tmpC.b * gg, 0.95, crackK * 0.85);
       }
     }
     sGeo.attributes.position.needsUpdate = true;
     sGeo.attributes.color.needsUpdate = true;
     sGeo.computeVertexNormals();
     sausage.rotation.x = s.roll;
-    sausage.position.y = -2.3 + RAD * sw;
+    sausage.position.y = -2.3 + RAD * sw - 0.05;
     // パンパンになるほど皮がピンと張ってツヤツヤ
-    sMat.clearcoat = clamp(0.2 + s.tension * 0.8 + s.gloss * 0.3, 0, 1);
-    sMat.roughness = clamp(0.55 - s.tension * 0.35 - s.gloss * 0.15, 0.12, 0.8);
+    sMat.clearcoat = clamp(0.25 + Math.max(0, t - 0.3) * 1.1 + s.gloss * 0.3, 0, 1);
+    sMat.roughness = clamp(0.5 - Math.max(0, t - 0.3) * 0.5 - s.gloss * 0.15, 0.1, 0.8);
+    updateBeads(t);
+  }
+  // 肉汁の玉（皮からにじみ出る）
+  const beadM = new T.MeshPhysicalMaterial({ color: '#d9963a', roughness: 0.05, clearcoat: 1, transparent: true, opacity: 0.9 });
+  function updateBeads(t) {
+    const want = t < 0.7 ? 0 : Math.min(10, Math.floor((t - 0.7) * 45));
+    while (beads.length < want) {
+      const m = new T.Mesh(new T.SphereGeometry(0.16 + Math.random() * 0.12, 12, 8), beadM);
+      const x = (Math.random() - 0.5) * LEN * 0.75;
+      const a = (Math.random() - 0.5) * 1.6; // 上側（見える側）からの角度
+      m.userData = { x, a, grow: 0 };
+      sausage.add(m);
+      beads.push(m);
+    }
+    while (beads.length > want) sausage.remove(beads.pop());
+    const sw = 1 + Math.max(0, t - 0.25) * 0.34;
+    for (const m of beads) {
+      m.userData.grow = Math.min(1, m.userData.grow + 0.08);
+      const r = RAD * sw + 0.03;
+      // 回転していても、いつも上側（カメラから見える側）ににじむ
+      const a = Math.PI / 2 - sausage.rotation.x + m.userData.a;
+      m.position.set(m.userData.x, Math.sin(a) * r, Math.cos(a) * r);
+      m.scale.setScalar(m.userData.grow);
+    }
   }
 
   // 0〜1 の向き a（ウインナーの周方向）のうち、いま下（フライパン側）にある区切り
@@ -410,6 +485,8 @@
   // 新しい1本に
   function reset() {
     while (sausage.children.length) sausage.remove(sausage.children[0]);
+    beads = [];
+    makeCracks();
     for (const p of juice) scene.remove(p.m);
     juice = [];
     shake = 0;

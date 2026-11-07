@@ -26,51 +26,6 @@
   color: #fff;
   pointer-events: none;
 }
-.meter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.meter .lbl {
-  font-size: 12px;
-  font-weight: 900;
-  white-space: nowrap;
-}
-.bar {
-  position: relative;
-  flex: 1;
-  height: 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
-  overflow: hidden;
-}
-.bar .fill {
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #f3d38a, #f0a64a);
-  transition: width 0.15s;
-}
-.bar .fill.warm {
-  background: linear-gradient(90deg, #f3d38a, #ff8a3a);
-}
-.bar .fill.hot {
-  background: linear-gradient(90deg, #ffb36b, #ff3b3b);
-  animation: throb 0.25s infinite alternate;
-}
-@keyframes throb {
-  to {
-    filter: brightness(1.4);
-  }
-}
-/* 「パンパン」のいちばんおいしい範囲 */
-.bar .mark {
-  position: absolute;
-  left: 85%;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: rgba(255, 255, 255, 0.8);
-}
 .info {
   display: flex;
   gap: 14px;
@@ -91,51 +46,131 @@
   right: 0;
   bottom: 0;
   height: 28%;
-  padding: 12px 14px calc(env(safe-area-inset-bottom) + 12px);
-  background: linear-gradient(#3b3530, #2a2521);
-  border-top: 3px solid #1a1612;
+  padding: 10px 16px calc(env(safe-area-inset-bottom) + 10px);
+  background: linear-gradient(#232326, #151517);
+  border-top: 3px solid #0d0d0e;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  align-items: center;
+  gap: 14px;
+}
+/* ガスコンロのつまみ */
+.stove {
+  flex: 1;
+  display: flex;
+  align-items: center;
   gap: 12px;
 }
 .knob {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #fff;
+  position: relative;
+  width: min(30cqw, 21cqh, 140px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, #3a3b40 0 52%, #1d1e21 53% 70%, transparent 71%);
+  touch-action: none;
+  cursor: grab;
+}
+.tick {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  font-size: 11px;
   font-weight: 900;
-  font-size: 13px;
+  color: #c9ccd2;
 }
-.knob input {
-  flex: 1;
-  height: 34px;
-  accent-color: #ff7a3a;
+/* 角度: 消=0度, 弱≈60度, 中≈150度, 強≈250度（上から時計回り） */
+.tick.t0 {
+  transform: translate(-50%, -50%) rotate(0deg) translateY(calc(min(30cqw, 21cqh, 140px) * -0.43)) rotate(0deg);
 }
-.knob b {
-  width: 42px;
-  text-align: center;
-  color: #ffb36b;
+.tick.t1 {
+  transform: translate(-50%, -50%) rotate(60deg) translateY(calc(min(30cqw, 21cqh, 140px) * -0.43)) rotate(-60deg);
+  color: #8fc8ff;
 }
-.ctl-row {
+.tick.t2 {
+  transform: translate(-50%, -50%) rotate(150deg) translateY(calc(min(30cqw, 21cqh, 140px) * -0.43)) rotate(-150deg);
+  color: #ffd37a;
+}
+.tick.t3 {
+  transform: translate(-50%, -50%) rotate(250deg) translateY(calc(min(30cqw, 21cqh, 140px) * -0.43)) rotate(-250deg);
+  color: #ff8a6a;
+}
+.dial {
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f4f5f7, #b8bcc4 55%, #7d828c);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6), inset 0 -3px 4px rgba(0, 0, 0, 0.25);
+  transition: transform 0.05s;
+}
+/* つまみの持つところ（棒）と目印 */
+.dial::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 6%;
+  bottom: 6%;
+  width: 26%;
+  transform: translateX(-50%);
+  border-radius: 8px;
+  background: linear-gradient(90deg, #9aa0a8, #eef0f3 50%, #8d939b);
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.4);
+}
+.dial i {
+  position: absolute;
+  left: 50%;
+  top: 9%;
+  width: 6px;
+  height: 14%;
+  transform: translateX(-50%);
+  border-radius: 3px;
+  background: #e8463a;
+}
+.knob-info {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
+  color: #fff;
+}
+.knob-info b {
+  font-size: 22px;
+  font-weight: 900;
+}
+.knob-info b.off {
+  color: #888;
+}
+.knob-info b.low {
+  color: #8fc8ff;
+}
+.knob-info b.mid {
+  color: #ffd37a;
+}
+.knob-info b.high {
+  color: #ff8a6a;
+}
+.knob-info small {
+  font-size: 10px;
+  font-weight: 800;
+  color: #aaa;
+}
+.ctl-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 36%;
 }
 .ctl {
-  flex: 1;
-  min-height: 50px;
-  border: 3px solid #1a1612;
+  min-height: 48px;
+  border: 3px solid #0d0d0e;
   border-radius: 14px;
   background: #fff8ec;
   color: var(--ink);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 900;
-  box-shadow: 0 4px 0 #1a1612;
+  box-shadow: 0 4px 0 #0d0d0e;
 }
 .ctl:active {
   transform: translateY(3px);
-  box-shadow: 0 1px 0 #1a1612;
+  box-shadow: 0 1px 0 #0d0d0e;
 }
 .ctl.serve {
   background: var(--accent);

@@ -47,30 +47,195 @@
     rollAnim = 0;
     rollTarget = 0;
     over = false;
-    $('heat').value = 0;
-    setHeat(0);
+    knobAngle = 0;
+    setKnob(0, true);
+    beaker.ml = beaker.cap;
+    beaker.pouring = false;
+    beaker.tilt = 0;
     SC.reset();
     sync();
   }
   function setHeat(v) {
     if (!S || over) return;
     S.heat = clamp(v, 0, 1);
-    $('heat-label').textContent = S.heat < 0.05 ? '消火' : S.heat < 0.4 ? '弱火' : S.heat < 0.7 ? '中火' : '強火';
   }
+
+  // ---------- ガスコンロのつまみ ----------
+  // 上（0度）が「消」。時計回りに回すほど火が強くなる（最大 270度）
+  const IGNITE = 28;
+  const MAXA = 270;
+  let knobAngle = 0;
+  function setKnob(a, silent) {
+    const prev = knobAngle;
+    knobAngle = clamp(a, 0, MAXA);
+    $('knob-dial').style.transform = `rotate(${knobAngle}deg)`;
+    const on = knobAngle >= IGNITE;
+    if (!silent && on && prev < IGNITE) {
+      // カチカチ…ボッ
+      [0, 0.09].forEach((d) => audio.tone(3200, 0.02, { type: 'square', vol: 0.12, delay: d }));
+      audio.noise(0.25, { vol: 0.25, cutoff: 600, delay: 0.2 });
+      haptics.vibrate([8, 60, 8]);
+    } else if (!silent && !on && prev >= IGNITE) audio.noise(0.12, { vol: 0.12, cutoff: 900 });
+    const h = on ? 0.08 + ((knobAngle - IGNITE) / (MAXA - IGNITE)) * 0.92 : 0;
+    setHeat(h);
+    $('heat-label').textContent = !on ? '消' : h < 0.4 ? '弱火' : h < 0.7 ? '中火' : '強火';
+    $('heat-label').className = !on ? 'off' : h < 0.4 ? 'low' : h < 0.7 ? 'mid' : 'high';
+  }
+  (function knobInput() {
+    const el = $('knob');
+    let start = null;
+    const angAt = (e) => {
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      return (Math.atan2(e.clientX - cx, -(e.clientY - cy)) * 180) / Math.PI; // 上が0、時計回り
+    };
+    el.addEventListener('pointerdown', (e) => {
+      if (!S || over) return;
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      start = { a: angAt(e), k: knobAngle };
+      audio.unlock();
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      let d = angAt(e) - start.a;
+      if (d > 180) d -= 360;
+      if (d < -180) d += 360;
+      start.a += d;
+      start.k = clamp(start.k + d, 0, MAXA);
+      setKnob(start.k);
+    });
+    const end = () => (start = null);
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+  })();
+
+  // ---------- 水のビーカー（目盛り付き） ----------
+  const beaker = { cap: 100, ml: 100, pouring: false, tilt: 0, refillT: 0, x: 0, y: 0, w: 0, h: 0 };
+  const POUR = 22; // ml/秒
+  // ml を、ふだん使う量の目安に
+  function measure(ml) {
+    if (ml < 1) return '';
+    if (ml < 4) return 'ほんの少し';
+    if (ml < 12) return `小さじ${Math.max(1, Math.round(ml / 5))}杯くらい`;
+    if (ml < 90) {
+      const t = Math.round((ml / 15) * 2) / 2;
+      return `大さじ${t % 1 ? Math.floor(t) + '杯半' : t + '杯'}くらい`;
+    }
+    return `コップ${Math.round((ml / 200) * 4) / 4}杯くらい`;
+  }
+  function pourStep(dt) {
+    const b = beaker;
+    const target = b.pouring && b.ml > 0 ? 1 : 0;
+    b.tilt += (target - b.tilt) * Math.min(1, dt * 8);
+    if (b.pouring && b.tilt > 0.6 && b.ml > 0 && !over) {
+      const ml = Math.min(b.ml, POUR * dt);
+      b.ml -= ml;
+      PH.addWater(S, ml);
+      if (Math.random() < dt * 6) audio.noise(0.12, { vol: S.panT > 100 ? 0.3 : 0.08, cutoff: S.panT > 100 ? 3500 : 1200 });
+      if (S.panT > 98 && Math.random() < dt * 2) say('ジュワーッ', '#bfe3ff');
+    }
+    // 空になったら、手を離すと水をくみ直す
+    if (!b.pouring && b.ml < b.cap) {
+      b.refillT += dt;
+      if (b.ml <= 0.5 && b.refillT > 0.8) b.ml = b.cap;
+    } else b.refillT = 0;
+  }
+  function drawBeaker() {
+    const b = beaker;
+    const w = Math.min(W * 0.2, 86);
+    const h = w * 1.25;
+    b.w = w;
+    b.h = h;
+    b.x = W - w - 16;
+    b.y = H * 0.16;
+    const ang = -b.tilt * 1.05; // 左へ傾けて注ぐ
+    g.save();
+    // 注いでいる水の流れ
+    if (b.tilt > 0.6 && b.ml > 0 && b.pouring) {
+      const sx = b.x + 4;
+      const sy = b.y + h * 0.15;
+      g.strokeStyle = 'rgba(170,215,240,0.75)';
+      g.lineWidth = 5;
+      g.beginPath();
+      g.moveTo(sx, sy);
+      g.quadraticCurveTo(sx - 30, sy + 10, W * 0.52, H * 0.42);
+      g.stroke();
+    }
+    g.translate(b.x, b.y + h);
+    g.rotate(ang);
+    // 水（傾けても水面は水平）
+    const lv = b.ml / b.cap;
+    if (lv > 0) {
+      g.save();
+      g.beginPath();
+      g.rect(3, -h + 6, w - 6, h - 9);
+      g.clip();
+      g.rotate(-ang);
+      const surf = -h * lv * 0.88 - 3;
+      const wg = g.createLinearGradient(0, surf, 0, 0);
+      wg.addColorStop(0, 'rgba(150,205,235,0.75)');
+      wg.addColorStop(1, 'rgba(90,160,210,0.85)');
+      g.fillStyle = wg;
+      g.fillRect(-w * 2, surf, w * 5, h * 3);
+      g.restore();
+    }
+    // ガラス
+    g.strokeStyle = 'rgba(255,255,255,0.9)';
+    g.lineWidth = 2.5;
+    g.beginPath();
+    g.moveTo(-4, -h);
+    g.lineTo(2, -h + 6);
+    g.lineTo(2, -2);
+    g.quadraticCurveTo(2, 0, 6, 0);
+    g.lineTo(w - 6, 0);
+    g.quadraticCurveTo(w - 2, 0, w - 2, -2);
+    g.lineTo(w - 2, -h);
+    g.stroke();
+    g.fillStyle = 'rgba(255,255,255,0.08)';
+    g.fillRect(2, -h, w - 4, h);
+    // 目盛り（10mlごと。20ごとに数字）
+    g.fillStyle = '#fff';
+    g.strokeStyle = 'rgba(255,255,255,0.85)';
+    g.lineWidth = 1.2;
+    g.font = '800 9px sans-serif';
+    g.textAlign = 'right';
+    for (let m = 10; m <= b.cap; m += 10) {
+      const y = -(m / b.cap) * h * 0.88 - 3;
+      const big = m % 20 === 0;
+      g.beginPath();
+      g.moveTo(w - 4, y);
+      g.lineTo(w - (big ? 18 : 11), y);
+      g.stroke();
+      if (big) g.fillText(m, w - 20, y + 3);
+    }
+    g.textAlign = 'center';
+    g.font = '900 10px sans-serif';
+    g.fillText('ml', w / 2 - 6, -6);
+    g.restore();
+    // 下に、入れた量の目安
+    const poured = S.poured || 0;
+    g.textAlign = 'right';
+    g.font = '900 12px "M PLUS Rounded 1c", sans-serif';
+    g.fillStyle = '#fff';
+    g.strokeStyle = 'rgba(0,0,0,0.6)';
+    g.lineWidth = 3;
+    const lines = [b.pouring ? 'そそぎ中…' : 'おして注ぐ', `入れた量 ${Math.round(poured)}ml`, measure(poured)];
+    lines.forEach((t, i) => {
+      if (!t) return;
+      g.strokeText(t, W - 14, b.y + h + 18 + i * 16);
+      g.fillText(t, W - 14, b.y + h + 18 + i * 16);
+    });
+  }
+  const inBeaker = (x, y) => x > beaker.x - 10 && x < beaker.x + beaker.w + 10 && y > beaker.y - 10 && y < beaker.y + beaker.h + 10;
   function roll() {
     if (!S || over) return;
     rollTarget += Math.PI / 2;
     audio.noise(0.08, { vol: 0.15, cutoff: 1500 });
     haptics.vibrate(10);
   }
-  function addWater() {
-    if (!S || over) return;
-    if (PH.addWater(S)) {
-      say('ジュワーッ', '#bfe3ff');
-      audio.noise(0.6, { vol: 0.35, cutoff: 3000 });
-      haptics.vibrate(30);
-    }
-  }
+
   function serve() {
     if (!S || over) return;
     over = true;
@@ -88,11 +253,12 @@
       if (rollAnim < rollTarget) rollAnim = Math.min(rollTarget, rollAnim + dt * 7);
       S.roll = rollAnim;
       if (!over && $('screen-title').classList.contains('hidden')) {
+        pourStep(dt);
         PH.step(S, dt, SC.downBin(S.roll));
         if (S.burst) boom();
         sounds(dt);
       }
-      SC.updateSausage({ brown: S.brown, roll: S.roll, swell: clamp(S.tension, 0, 1.2), tension: clamp(S.tension, 0, 1), gloss: S.gloss, burst: S.burst });
+      SC.updateSausage({ brown: S.brown, roll: S.roll, tension: clamp(S.tension, 0, 1.05), gloss: S.gloss, heatC: S.coreT, burst: S.burst });
       SC.render(dt, S);
       drawHud(dt);
     }
@@ -157,18 +323,16 @@
       g.fillText(b.text, b.x, b.y);
       g.globalAlpha = 1;
     }
+    if (!over || S.burst) drawBeaker();
     sync();
   }
   // HTMLの表示を更新
   function sync() {
     if (!S) return;
-    const t = clamp(S.tension, 0, 1);
-    $('tension-fill').style.width = `${t * 100}%`;
-    $('tension-fill').className = 'fill' + (t > 0.85 ? ' hot' : t > 0.7 ? ' warm' : '');
     const c = S.coreT;
     $('core').textContent = c < 30 ? '冷たい' : c < 55 ? 'ぬるい' : c < PH.K.cooked ? 'あたたかい' : c < 95 ? 'アツアツ ✓' : 'グラグラ ✓';
     $('core').className = 'val' + (c >= PH.K.cooked ? ' ok' : '');
-    $('water-n').textContent = S.water > 0.5 ? `💧${Math.round(S.water)}ml` : '';
+    $('water-n').textContent = S.water > 0.5 ? `フライパンの水 約${Math.round(S.water)}ml` : '';
     $('time').textContent = `${Math.floor(S.t / 60)}:${String(Math.floor(S.t % 60)).padStart(2, '0')}`;
   }
 
@@ -207,17 +371,27 @@
   }
 
   // ---------- 入力 ----------
-  $('heat').addEventListener('input', (e) => setHeat(+e.target.value));
   $('btn-roll').addEventListener('click', roll);
-  $('btn-water').addEventListener('click', addWater);
   $('btn-serve').addEventListener('click', serve);
+  // ビーカーをおしている間は注ぐ / ウインナーをタップで転がす
   $('gl').addEventListener('pointerdown', (e) => {
     if (!S || over) return;
     const r = $('gl').getBoundingClientRect();
+    const px = e.clientX - r.left;
+    const py = e.clientY - r.top;
+    if (inBeaker(px, py)) {
+      $('gl').setPointerCapture(e.pointerId);
+      beaker.pouring = true;
+      audio.unlock();
+      return;
+    }
     const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
     const ny = -(((e.clientY - r.top) / r.height) * 2 - 1);
     if (SC.hitSausage(nx, ny)) roll();
   });
+  const stopPour = () => (beaker.pouring = false);
+  $('gl').addEventListener('pointerup', stopPour);
+  $('gl').addEventListener('pointercancel', stopPour);
 
   // ---------- 画面 ----------
   function show(name) {
@@ -251,5 +425,5 @@
   const best = storage.get('wiener.best', null);
   if (best !== null) $('title-best').textContent = `これまでの最高 ${best}点${rankOf(best).id === 'なし' ? '' : `（${rankOf(best).id}）`}`;
   requestAnimationFrame(loop);
-  window.WienerDebug = { get S() { return S; }, serve, addWater, roll, setHeat };
+  window.WienerDebug = { get S() { return S; }, serve, roll, setHeat, setKnob, beaker };
 })();

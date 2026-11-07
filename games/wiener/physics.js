@@ -85,10 +85,13 @@
     if (s.pressure >= str) s.burst = true;
   }
 
-  function addWater(s) {
-    if (s.burst) return false;
-    s.water = Math.min(80, s.water + K.waterAdd);
-    if (s.panT > 100) s.panT = 100; // ジュワッと冷める
+  // 水を注ぐ（ml）。熱いフライパンに入れるとジュワッと冷める
+  function addWater(s, ml) {
+    if (s.burst || ml <= 0) return false;
+    const before = s.water;
+    s.water = Math.min(120, s.water + ml);
+    s.poured = (s.poured || 0) + (s.water - before);
+    if (s.panT > 100) s.panT = Math.max(100, s.panT - ml * 1.5);
     return true;
   }
 
