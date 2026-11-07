@@ -5,12 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>カートラッシュ！</title>
     <!-- トップを開いたら、すぐカートラッシュへ（ゲーム一覧は games/ にあります） -->
-    <meta http-equiv="refresh" content="0; url=games/cart-rush/index.html" />
+    <meta http-equiv="refresh" content="0; url=/games/cart-rush/index.html" />
     <script>
-      location.replace('games/cart-rush/index.html' + location.search + location.hash);
+      // 先頭の「/」が大事: ない場合、存在しないページから来たときに URL がどんどん伸びて読み込みが終わらなくなる
+      location.replace('/games/cart-rush/index.html' + location.search + location.hash);
     </script>
   </head>
   <body>
-    <p><a href="games/cart-rush/index.html">カートラッシュ！を開く</a>　／　<a href="games/index.html">ゲーム一覧</a></p>
+    <p><a href="/games/cart-rush/index.html">カートラッシュ！を開く</a>　／　<a href="/games/index.html">ゲーム一覧</a></p>
   </body>
 </html>
