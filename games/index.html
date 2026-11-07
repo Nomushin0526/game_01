@@ -159,6 +159,19 @@
         transform: rotate(-20deg);
         clip-path: polygon(0 30%, 4% 0, 8% 30%, 45% 32%, 100% 0, 100% 100%, 45% 68%, 8% 70%, 4% 100%, 0 70%);
       }
+.thumb-wiener {
+        background: radial-gradient(circle at 50% 50%, #2e2f33 0 46%, #1a1b1e 47% 52%, #3a3430 53%);
+        display: grid;
+        place-items: center;
+      }
+      .thumb-wiener span {
+        width: 120px;
+        height: 30px;
+        border-radius: 15px;
+        background: linear-gradient(#e7a07a, #b5602e 55%, #7a3a14);
+        box-shadow: inset 0 4px 4px rgba(255, 255, 255, 0.45), 0 6px 10px rgba(0, 0, 0, 0.5);
+        transform: rotate(-12deg);
+      }
       .thumb-soon {
         background: repeating-linear-gradient(45deg, #f3eee2 0 14px, #ebe4d4 14px 28px);
         display: grid;
@@ -236,6 +249,15 @@
             <span class="tag">職人ゲーム</span>
             <h2>バット職人</h2>
             <p>旋盤で回る角材をノミで削り、やすりで磨き、ニスで仕上げる。ただの角材から究極のバット（UR）まで。</p>
+          </div>
+        </a>
+
+        <a class="card" href="wiener/index.html">
+          <div class="thumb thumb-wiener"><span aria-hidden="true"></span></div>
+          <div class="body">
+            <span class="tag">焼き加減ゲーム</span>
+            <h2>ウインナー焼き</h2>
+            <p>火加減と水で、皮がパンパンに張る寸前まで攻めろ。破裂したら即終了。目指せ「究極のパリッ」。</p>
           </div>
         </a>
 

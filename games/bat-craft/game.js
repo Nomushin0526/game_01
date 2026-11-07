@@ -210,7 +210,7 @@
     const best = storage.get('bat.best', null);
     if (!best || sc.total > best) storage.set('bat.best', sc.total);
     const card = $('rank-card');
-    const grad = rk.grad.length > 2 ? `linear-gradient(120deg, ${rk.grad.join(', ')})` : `linear-gradient(140deg, ${rk.grad[0]}, ${rk.grad[1]})`;
+    const grad = rk.grad.length > 2 ? `linear-gradient(120deg, ${rk.grad.concat(rk.grad[0]).join(', ')})` : `linear-gradient(140deg, ${rk.grad[0]}, ${rk.grad[1]})`;
     card.style.background = grad;
     card.className = 'rank-card' + (rk.id === 'UR' ? ' ur' : '') + (rk.id === 'SSR' ? ' ssr' : '');
     // 「なし」はランク表示そのものを出さない
